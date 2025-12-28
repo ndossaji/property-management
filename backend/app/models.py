@@ -3,8 +3,8 @@ Database Models
 SQLAlchemy models for the Property Management application
 """
 
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum as SQLEnum
+from datetime import datetime, date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum as SQLEnum, Numeric, Date
 from sqlalchemy.orm import relationship, declarative_base
 import enum
 
@@ -28,6 +28,25 @@ class PropertyType(str, enum.Enum):
     APARTMENT = "apartment"
     COMMERCIAL = "commercial"
     LAND = "land"
+    OTHER = "other"
+
+
+class ExpenseCategory(str, enum.Enum):
+    """Expense category enumeration"""
+    MAINTENANCE = "maintenance"
+    REPAIRS = "repairs"
+    UTILITIES = "utilities"
+    INSURANCE = "insurance"
+    TAXES = "taxes"
+    MORTGAGE = "mortgage"
+    HOA = "hoa"
+    LANDSCAPING = "landscaping"
+    CLEANING = "cleaning"
+    SUPPLIES = "supplies"
+    LEGAL = "legal"
+    ACCOUNTING = "accounting"
+    ADVERTISING = "advertising"
+    TRAVEL = "travel"
     OTHER = "other"
 
 
@@ -69,12 +88,6 @@ class Property(Base):
     nickname = Column(String(100), nullable=True)  # Optional friendly name
     property_type = Column(SQLEnum(PropertyType), nullable=False, default=PropertyType.SINGLE_FAMILY)
     status = Column(SQLEnum(PropertyStatus), nullable=False, default=PropertyStatus.ACTIVE)
-    
-    # Additional info
-    bedrooms = Column(Integer, nullable=True)
-    bathrooms = Column(Integer, nullable=True)
-    square_feet = Column(Integer, nullable=True)
-    year_built = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     
     # Foreign keys
@@ -101,3 +114,57 @@ class Property(Base):
     def __repr__(self):
         return f"<Property(id={self.id}, address='{self.street_address}', nickname='{self.nickname}')>"
 
+
+class Expense(Base):
+    """Expense model - represents expenses tied to properties"""
+    __tablename__ = "expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Expense details
+    description = Column(String(500), nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)
+    category = Column(SQLEnum(ExpenseCategory), nullable=False, default=ExpenseCategory.OTHER)
+    expense_date = Column(Date, nullable=False)
+    vendor = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    # Foreign keys
+    property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    property = relationship("Property", backref="expenses", lazy="selectin")
+    receipts = relationship("ExpenseReceipt", back_populates="expense", cascade="all, delete-orphan", lazy="selectin")
+
+    def __repr__(self):
+        return f"<Expense(id={self.id}, description='{self.description}', amount={self.amount})>"
+
+
+class ExpenseReceipt(Base):
+    """ExpenseReceipt model - represents receipt images for expenses"""
+    __tablename__ = "expense_receipts"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # File details
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    content_type = Column(String(100), nullable=True)
+    file_size = Column(Integer, nullable=True)
+
+    # Foreign keys
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    expense = relationship("Expense", back_populates="receipts")
+
+    def __repr__(self):
+        return f"<ExpenseReceipt(id={self.id}, filename='{self.original_filename}')>"

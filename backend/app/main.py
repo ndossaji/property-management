@@ -78,6 +78,10 @@ app.include_router(owners_router)
 from app.routes_properties import router as properties_router
 app.include_router(properties_router)
 
+# Include expense routes
+from app.routes_expenses import router as expenses_router
+app.include_router(expenses_router)
+
 
 if __name__ == "__main__":
     import uvicorn

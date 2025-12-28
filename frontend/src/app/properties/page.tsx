@@ -18,10 +18,6 @@ const propertySchema = z.object({
   nickname: z.string().optional().nullable(),
   property_type: z.enum(['single_family', 'multi_family', 'condo', 'townhouse', 'apartment', 'commercial', 'land', 'other']),
   status: z.enum(['active', 'inactive', 'maintenance', 'sold']),
-  bedrooms: z.number().int().min(0).optional().nullable(),
-  bathrooms: z.number().int().min(0).optional().nullable(),
-  square_feet: z.number().int().min(0).optional().nullable(),
-  year_built: z.number().int().min(1800).max(2100).optional().nullable(),
   notes: z.string().optional().nullable(),
   owner_id: z.number().optional().nullable(),
 });
@@ -92,10 +88,6 @@ function PropertiesContent() {
       const propertyData = {
         ...data,
         owner_id: data.owner_id || null,
-        bedrooms: data.bedrooms || null,
-        bathrooms: data.bathrooms || null,
-        square_feet: data.square_feet || null,
-        year_built: data.year_built || null,
       };
       
       await propertiesApi.create(propertyData);
@@ -252,26 +244,6 @@ function PropertyForm({ owners, onSubmit, onCancel, register, errors, isSubmitti
                     <option key={status.value} value={status.value}>{status.label}</option>
                   ))}
                 </select>
-              </div>
-            </div>
-
-            {/* Property Details */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bedrooms</label>
-                <input type="number" {...register('bedrooms', { valueAsNumber: true })} min="0" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bathrooms</label>
-                <input type="number" {...register('bathrooms', { valueAsNumber: true })} min="0" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sq. Feet</label>
-                <input type="number" {...register('square_feet', { valueAsNumber: true })} min="0" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Year Built</label>
-                <input type="number" {...register('year_built', { valueAsNumber: true })} min="1800" max="2100" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
               </div>
             </div>
 
