@@ -62,9 +62,21 @@ async def api_status():
     }
 
 
+# Initialize database tables
+from app.database import create_tables
+create_tables()
+
 # Include authentication routes
 from app.routes_auth import router as auth_router
 app.include_router(auth_router)
+
+# Include owner routes
+from app.routes_owners import router as owners_router
+app.include_router(owners_router)
+
+# Include property routes
+from app.routes_properties import router as properties_router
+app.include_router(properties_router)
 
 
 if __name__ == "__main__":

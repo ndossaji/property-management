@@ -11,46 +11,46 @@ import { useAuth } from '@/hooks/useAuth';
 export default function Home() {
   const { isAuthenticated, isLoading } = useAuth();
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
+    <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-50 dark:bg-gray-900">
       <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm">
-        <h1 className="text-4xl font-bold text-center mb-8">
+        <h1 className="text-4xl font-bold text-center mb-8 text-gray-900 dark:text-gray-100">
           Property Management Application
         </h1>
-        
+
         <div className="mb-8 text-center">
-          <p className="text-lg mb-4">
+          <p className="text-lg mb-4 text-gray-800 dark:text-gray-200">
             Welcome to your Property Management System
           </p>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Docker deployment is configured and running!
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-          <div className="border border-gray-300 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-2">Frontend</h2>
-            <p className="text-sm text-gray-600">
+          <div className="border border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
+            <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Frontend</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Next.js 14 with TypeScript, Tailwind CSS, and React Query
             </p>
           </div>
 
-          <div className="border border-gray-300 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-2">Backend</h2>
-            <p className="text-sm text-gray-600">
+          <div className="border border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
+            <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Backend</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               FastAPI with Python, PostgreSQL, and Celery
             </p>
           </div>
 
-          <div className="border border-gray-300 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-2">Authentication</h2>
-            <p className="text-sm text-gray-600">
+          <div className="border border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
+            <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Authentication</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Auth0 integration for secure multi-tenant access
             </p>
           </div>
 
-          <div className="border border-gray-300 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-2">Storage</h2>
-            <p className="text-sm text-gray-600">
+          <div className="border border-gray-300 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
+            <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100">Storage</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               AWS S3 for documents, receipts, and file uploads
             </p>
           </div>

@@ -2,27 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Light mode styles (default) */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  --foreground-rgb: 17, 24, 39; /* gray-900 */
+  --background-rgb: 249, 250, 251; /* gray-50 */
 }
 
+/* Dark mode styles */
 @media (prefers-color-scheme: dark) {
   :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+    --foreground-rgb: 243, 244, 246; /* gray-100 */
+    --background-rgb: 17, 24, 39; /* gray-900 */
   }
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background-color: rgb(var(--background-rgb));
+}
+
+/* Ensure form inputs have proper text color in all modes */
+input, textarea, select {
+  color: rgb(17, 24, 39); /* Always dark text for form inputs */
+}
+
+/* Dark mode specific overrides for form inputs */
+@media (prefers-color-scheme: dark) {
+  input, textarea, select {
+    color: rgb(17, 24, 39); /* Keep dark text in inputs */
+    background-color: rgb(255, 255, 255); /* Keep white background in inputs */
+  }
 }
 
