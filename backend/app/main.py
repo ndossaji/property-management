@@ -62,10 +62,9 @@ async def api_status():
     }
 
 
-# TODO: Add your API routes here
-# Example:
-# from app.api.v1 import router as api_v1_router
-# app.include_router(api_v1_router, prefix="/api/v1")
+# Include authentication routes
+from app.routes_auth import router as auth_router
+app.include_router(auth_router)
 
 
 if __name__ == "__main__":

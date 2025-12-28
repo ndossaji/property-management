@@ -1,9 +1,15 @@
 /**
  * Home Page Component
- * This is a sample/starter file to demonstrate the Docker setup.
+ * Landing page with links to login and API documentation
  */
 
+'use client';
+
+import Link from 'next/link';
+import { useAuth } from '@/hooks/useAuth';
+
 export default function Home() {
+  const { isAuthenticated, isLoading } = useAuth();
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24">
       <div className="z-10 max-w-5xl w-full items-center justify-center font-mono text-sm">
@@ -50,16 +56,35 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center space-x-4">
+          {isLoading ? (
+            <div className="inline-block">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : isAuthenticated ? (
+            <Link
+              href="/dashboard"
+              className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
+            >
+              Go to Dashboard
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
+            >
+              Sign In
+            </Link>
+          )}
           <a
             href="/api/docs"
-            className="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-4"
+            className="inline-block bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
           >
             API Documentation
           </a>
           <a
             href="/api/health"
-            className="inline-block bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+            className="inline-block bg-green-500 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-200"
           >
             Health Check
           </a>

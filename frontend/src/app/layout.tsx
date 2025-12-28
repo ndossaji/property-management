@@ -1,6 +1,6 @@
 /**
  * Root Layout Component
- * This is a sample/starter file to demonstrate the Docker setup.
+ * Simple layout without authentication provider
  */
 
 import type { Metadata } from 'next';
@@ -8,7 +8,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Property Management',
-  description: 'Property Management Application',
+  description: 'Business management platform for automated billing, time tracking, and expense handling',
 };
 
 export default function RootLayout({
@@ -18,7 +18,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+      </body>
     </html>
   );
 }
