@@ -7,15 +7,15 @@ import os
 import csv
 import uuid
 from io import StringIO
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Expense, ExpenseReceipt, Property, ExpenseCategory
+from app.models import Expense, ExpenseReceipt, Property, ExpenseCategory, ExpenseCustomFieldValue, CustomField, CustomFieldOption, CustomFieldType
 from app.schemas import (
     ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseWithProperty,
     ExpenseReceiptResponse, BulkExpenseResult
@@ -88,9 +88,23 @@ async def create_expense(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Property with id {expense_data.property_id} not found"
         )
-    
-    expense = Expense(**expense_data.model_dump())
+
+    # Create expense without custom_fields
+    expense_dict = expense_data.model_dump(exclude={'custom_fields'})
+    expense = Expense(**expense_dict)
     db.add(expense)
+    db.flush()  # Get the expense ID
+
+    # Add custom field values if provided
+    if expense_data.custom_fields:
+        for field_id, value in expense_data.custom_fields.items():
+            custom_value = ExpenseCustomFieldValue(
+                expense_id=expense.id,
+                field_id=field_id,
+                value=value
+            )
+            db.add(custom_value)
+
     db.commit()
     db.refresh(expense)
     return expense
@@ -119,11 +133,28 @@ async def update_expense(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Property with id {expense_data.property_id} not found"
             )
-    
-    update_data = expense_data.model_dump(exclude_unset=True)
+
+    # Update custom fields if provided
+    if expense_data.custom_fields is not None:
+        # Delete existing custom field values for this expense
+        db.query(ExpenseCustomFieldValue).filter(
+            ExpenseCustomFieldValue.expense_id == expense_id
+        ).delete()
+
+        # Add new custom field values
+        for field_id, value in expense_data.custom_fields.items():
+            custom_value = ExpenseCustomFieldValue(
+                expense_id=expense_id,
+                field_id=field_id,
+                value=value
+            )
+            db.add(custom_value)
+
+    # Update other fields
+    update_data = expense_data.model_dump(exclude_unset=True, exclude={'custom_fields'})
     for field, value in update_data.items():
         setattr(expense, field, value)
-    
+
     db.commit()
     db.refresh(expense)
     return expense
@@ -399,4 +430,132 @@ async def list_categories(
 ):
     """Get list of available expense categories"""
     return [{"value": cat.value, "label": cat.value.replace("_", " ").title()} for cat in ExpenseCategory]
+
+
+# ============================================================================
+# CSV Export Endpoint
+# ============================================================================
+
+@router.get("/export/csv")
+async def export_expenses_csv(
+    property_id: Optional[int] = Query(None, description="Filter by property"),
+    category: Optional[ExpenseCategory] = Query(None, description="Filter by category"),
+    start_date: Optional[date] = Query(None, description="Filter by start date"),
+    end_date: Optional[date] = Query(None, description="Filter by end date"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Export expenses to CSV file with optional filtering.
+
+    Returns a CSV file with all expense data including custom fields.
+    """
+    # Build query with filters
+    query = db.query(Expense)
+
+    if property_id:
+        query = query.filter(Expense.property_id == property_id)
+    if category:
+        query = query.filter(Expense.category == category)
+    if start_date:
+        query = query.filter(Expense.expense_date >= start_date)
+    if end_date:
+        query = query.filter(Expense.expense_date <= end_date)
+
+    expenses = query.order_by(Expense.expense_date.desc()).all()
+
+    # Get all custom fields for expenses
+    custom_field_values = db.query(ExpenseCustomFieldValue).filter(
+        ExpenseCustomFieldValue.expense_id.in_([e.id for e in expenses])
+    ).all() if expenses else []
+
+    # Get all custom field definitions to check field types
+    custom_field_ids = set(cfv.field_id for cfv in custom_field_values)
+    custom_field_defs = db.query(CustomField).filter(
+        CustomField.id.in_(custom_field_ids)
+    ).all() if custom_field_ids else []
+
+    # Create a mapping of field_id -> field definition
+    field_def_map = {field.id: field for field in custom_field_defs}
+
+    # Get all dropdown options for dropdown fields
+    dropdown_field_ids = [f.id for f in custom_field_defs if f.field_type == CustomFieldType.DROPDOWN]
+    dropdown_options = db.query(CustomFieldOption).filter(
+        CustomFieldOption.field_id.in_(dropdown_field_ids)
+    ).all() if dropdown_field_ids else []
+
+    # Create a mapping of option_id -> label
+    option_label_map = {str(opt.id): opt.label for opt in dropdown_options}
+
+    # Create a mapping of expense_id -> {field_name: display_value}
+    custom_field_map = {}
+    for cf_value in custom_field_values:
+        if cf_value.expense_id not in custom_field_map:
+            custom_field_map[cf_value.expense_id] = {}
+
+        # Get the field definition
+        field_def = field_def_map.get(cf_value.field_id)
+        display_value = cf_value.value
+
+        # Convert dropdown values (option IDs) to labels
+        if field_def and field_def.field_type == CustomFieldType.DROPDOWN and cf_value.value:
+            display_value = option_label_map.get(cf_value.value, cf_value.value)
+
+        custom_field_map[cf_value.expense_id][cf_value.field.name] = display_value
+
+    # Get unique custom field names
+    all_custom_field_names = set()
+    for cf_values in custom_field_map.values():
+        all_custom_field_names.update(cf_values.keys())
+    all_custom_field_names = sorted(all_custom_field_names)
+
+    # Create CSV in memory
+    output = StringIO()
+
+    # Define CSV columns
+    base_columns = [
+        'id', 'description', 'amount', 'category', 'expense_date',
+        'vendor', 'notes', 'property_id', 'property_address', 'created_at'
+    ]
+    columns = base_columns + all_custom_field_names
+
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+
+    # Write expense data
+    for expense in expenses:
+        # Convert category value to human-readable label
+        category_label = expense.category.value.replace('_', ' ').title()
+
+        row = {
+            'id': expense.id,
+            'description': expense.description,
+            'amount': float(expense.amount),
+            'category': category_label,
+            'expense_date': expense.expense_date.isoformat(),
+            'vendor': expense.vendor or '',
+            'notes': expense.notes or '',
+            'property_id': expense.property_id,
+            'property_address': expense.property.full_address if expense.property else '',
+            'created_at': expense.created_at.isoformat(),
+        }
+
+        # Add custom field values
+        custom_values = custom_field_map.get(expense.id, {})
+        for field_name in all_custom_field_names:
+            row[field_name] = custom_values.get(field_name, '')
+
+        writer.writerow(row)
+
+    # Prepare response
+    output.seek(0)
+    filename = f"expenses_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
 

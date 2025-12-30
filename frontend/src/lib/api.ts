@@ -327,4 +327,114 @@ export const expensesApi = {
   },
 
   getCategories: () => apiRequest<{ value: string; label: string }[]>('/api/expenses/categories/list'),
+
+  // CSV export
+  exportCsv: async (params?: {
+    property_id?: number;
+    category?: ExpenseCategory;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<void> => {
+    const token = (await import('./auth')).getAuthToken();
+    const baseUrl = (await import('./auth')).getApiUrl();
+
+    const searchParams = new URLSearchParams();
+    if (params?.property_id) searchParams.set('property_id', params.property_id.toString());
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.start_date) searchParams.set('start_date', params.start_date);
+    if (params?.end_date) searchParams.set('end_date', params.end_date);
+    const query = searchParams.toString();
+
+    const response = await fetch(`${baseUrl}/api/expenses/export/csv${query ? `?${query}` : ''}`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw { message: errorData.detail || 'Failed to export CSV', status: response.status };
+    }
+
+    // Download the file
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    // Extract filename from Content-Disposition header or use default
+    const contentDisposition = response.headers.get('Content-Disposition');
+    const filenameMatch = contentDisposition?.match(/filename="?(.+)"?/);
+    const filename = filenameMatch ? filenameMatch[1] : `expenses_export_${new Date().toISOString().split('T')[0]}.csv`;
+
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+};
+
+// ============================================================================
+// Custom Fields API
+// ============================================================================
+
+export type CustomFieldType = 'text' | 'number' | 'dropdown' | 'date' | 'checkbox';
+
+export interface CustomFieldOption {
+  id?: number;
+  value: string;
+  label: string;
+  display_order: number;
+}
+
+export interface CustomField {
+  id: number;
+  name: string;
+  field_type: CustomFieldType;
+  entity_type: 'expense' | 'property';
+  is_required: boolean;
+  display_order: number;
+  options: CustomFieldOption[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomFieldCreate {
+  name: string;
+  field_type: CustomFieldType;
+  entity_type: 'expense' | 'property';
+  is_required?: boolean;
+  display_order?: number;
+  options?: Omit<CustomFieldOption, 'id'>[];
+}
+
+export interface CustomFieldUpdate {
+  name?: string;
+  is_required?: boolean;
+  display_order?: number;
+  options?: Omit<CustomFieldOption, 'id'>[];
+}
+
+export const customFieldsApi = {
+  list: (entityType?: 'expense' | 'property') =>
+    apiRequest<CustomField[]>(`/api/custom-fields${entityType ? `?entity_type=${entityType}` : ''}`),
+
+  get: (id: number) => apiRequest<CustomField>(`/api/custom-fields/${id}`),
+
+  create: (data: CustomFieldCreate) =>
+    apiRequest<CustomField>('/api/custom-fields', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: CustomFieldUpdate) =>
+    apiRequest<CustomField>(`/api/custom-fields/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/custom-fields/${id}`, { method: 'DELETE' }),
 };

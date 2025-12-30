@@ -6,7 +6,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { expensesApi, propertiesApi, Property, Expense, ExpenseCategory } from '@/lib/api';
+import { expensesApi, propertiesApi, customFieldsApi, Property, Expense, ExpenseCategory, CustomField } from '@/lib/api';
+import CustomFieldsManager from '@/components/CustomFieldsManager';
+import CustomFieldsRenderer from '@/components/CustomFieldsRenderer';
 
 const expenseSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -42,11 +44,15 @@ function ExpensesContent() {
   const router = useRouter();
   const [properties, setProperties] = useState<Property[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
+  const [showCustomizeForm, setShowCustomizeForm] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [filterPropertyId, setFilterPropertyId] = useState<number | undefined>();
 
@@ -65,12 +71,14 @@ function ExpensesContent() {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [propertiesData, expensesData] = await Promise.all([
+      const [propertiesData, expensesData, customFieldsData] = await Promise.all([
         propertiesApi.list(),
         expensesApi.list({ property_id: filterPropertyId }),
+        customFieldsApi.list('expense'),
       ]);
       setProperties(propertiesData);
       setExpenses(expensesData);
+      setCustomFields(customFieldsData);
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -82,8 +90,16 @@ function ExpensesContent() {
     try {
       setIsSubmitting(true);
       setError(null);
-      await expensesApi.create(data);
+
+      // Include custom field values
+      const expenseData = {
+        ...data,
+        custom_fields: customFieldValues,
+      };
+
+      await expensesApi.create(expenseData as any);
       reset();
+      setCustomFieldValues({});
       setShowForm(false);
       loadData();
     } catch (err: any) {
@@ -100,6 +116,20 @@ function ExpensesContent() {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Failed to delete expense');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    try {
+      setIsExporting(true);
+      setError(null);
+      await expensesApi.exportCsv({
+        property_id: filterPropertyId,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Failed to export CSV');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -126,6 +156,26 @@ function ExpensesContent() {
               <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Expenses</h1>
             </div>
             <div className="flex space-x-2">
+              <button
+                onClick={() => setShowCustomizeForm(true)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+              >
+                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Customize Form
+              </button>
+              <button
+                onClick={handleExportCsv}
+                disabled={isExporting}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+              >
+                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {isExporting ? 'Exporting...' : 'Export CSV'}
+              </button>
               <button
                 onClick={() => setShowCsvImport(true)}
                 className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
@@ -173,12 +223,33 @@ function ExpensesContent() {
           </select>
         </div>
 
+        {/* Customize Form Modal */}
+        {showCustomizeForm && (
+          <CustomFieldsManager
+            entityType="expense"
+            onClose={() => setShowCustomizeForm(false)}
+            onSave={() => {
+              setShowCustomizeForm(false);
+              loadData();
+            }}
+          />
+        )}
+
         {/* Add Expense Form Modal */}
         {showForm && (
           <ExpenseForm
             properties={properties}
+            customFields={customFields}
+            customFieldValues={customFieldValues}
+            onCustomFieldChange={(fieldId, value) => {
+              setCustomFieldValues(prev => ({ ...prev, [fieldId]: value }));
+            }}
             onSubmit={handleSubmit(onSubmit)}
-            onCancel={() => { setShowForm(false); reset(); }}
+            onCancel={() => {
+              setShowForm(false);
+              reset();
+              setCustomFieldValues({});
+            }}
             register={register}
             errors={errors}
             isSubmitting={isSubmitting}
@@ -218,6 +289,9 @@ function ExpensesContent() {
 // Expense Form Component
 interface ExpenseFormProps {
   properties: Property[];
+  customFields: CustomField[];
+  customFieldValues: Record<number, string>;
+  onCustomFieldChange: (fieldId: number, value: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   register: any;
@@ -226,7 +300,7 @@ interface ExpenseFormProps {
   setValue: any;
 }
 
-function ExpenseForm({ properties, onSubmit, onCancel, register, errors, isSubmitting, setValue }: ExpenseFormProps) {
+function ExpenseForm({ properties, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting, setValue }: ExpenseFormProps) {
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
@@ -297,6 +371,13 @@ function ExpenseForm({ properties, onSubmit, onCancel, register, errors, isSubmi
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
               <textarea {...register('notes')} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
             </div>
+
+            {/* Custom Fields */}
+            <CustomFieldsRenderer
+              fields={customFields}
+              values={customFieldValues}
+              onChange={onCustomFieldChange}
+            />
           </div>
 
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
@@ -371,10 +452,10 @@ function ExpenseList({ expenses, properties, onDelete, onViewReceipts }: Expense
                 {formatCurrency(expense.amount)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                <button onClick={() => onViewReceipts(expense)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
+                <button type="button" onClick={() => onViewReceipts(expense)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
                   Receipts ({expense.receipts?.length || 0})
                 </button>
-                <button onClick={() => onDelete(expense.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                <button type="button" onClick={() => onDelete(expense.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
               </td>
             </tr>
           ))}

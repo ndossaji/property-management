@@ -6,7 +6,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { propertiesApi, ownersApi, Owner, Property, PropertyType, PropertyStatus } from '@/lib/api';
+import { propertiesApi, ownersApi, customFieldsApi, Owner, Property, PropertyType, PropertyStatus, CustomField } from '@/lib/api';
+import CustomFieldsManager from '@/components/CustomFieldsManager';
+import CustomFieldsRenderer from '@/components/CustomFieldsRenderer';
 
 const propertySchema = z.object({
   street_address: z.string().min(1, 'Street address is required'),
@@ -46,10 +48,13 @@ function PropertiesContent() {
   const router = useRouter();
   const [owners, setOwners] = useState<Owner[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<number, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showCustomizeForm, setShowCustomizeForm] = useState(false);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<PropertyFormData>({
     resolver: zodResolver(propertySchema),
@@ -67,12 +72,14 @@ function PropertiesContent() {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [ownersData, propertiesData] = await Promise.all([
+      const [ownersData, propertiesData, customFieldsData] = await Promise.all([
         ownersApi.list(),
         propertiesApi.list(),
+        customFieldsApi.list('property'),
       ]);
       setOwners(ownersData);
       setProperties(propertiesData);
+      setCustomFields(customFieldsData);
     } catch (err: any) {
       setError(err.message || 'Failed to load data');
     } finally {
@@ -84,14 +91,16 @@ function PropertiesContent() {
     try {
       setIsSubmitting(true);
       setError(null);
-      
+
       const propertyData = {
         ...data,
         owner_id: data.owner_id || null,
+        custom_fields: customFieldValues,
       };
-      
-      await propertiesApi.create(propertyData);
+
+      await propertiesApi.create(propertyData as any);
       reset();
+      setCustomFieldValues({});
       setShowForm(false);
       loadData();
     } catch (err: any) {
@@ -123,15 +132,27 @@ function PropertiesContent() {
               </button>
               <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Properties</h1>
             </div>
-            <button
-              onClick={() => setShowForm(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add Property
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowCustomizeForm(true)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+              >
+                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Customize Form
+              </button>
+              <button
+                onClick={() => setShowForm(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+              >
+                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Property
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -143,12 +164,33 @@ function PropertiesContent() {
           </div>
         )}
 
+        {/* Customize Form Modal */}
+        {showCustomizeForm && (
+          <CustomFieldsManager
+            entityType="property"
+            onClose={() => setShowCustomizeForm(false)}
+            onSave={() => {
+              setShowCustomizeForm(false);
+              loadData();
+            }}
+          />
+        )}
+
         {/* Property Form Modal */}
         {showForm && (
           <PropertyForm
             owners={owners}
+            customFields={customFields}
+            customFieldValues={customFieldValues}
+            onCustomFieldChange={(fieldId, value) => {
+              setCustomFieldValues(prev => ({ ...prev, [fieldId]: value }));
+            }}
             onSubmit={handleSubmit(onSubmit)}
-            onCancel={() => { setShowForm(false); reset(); }}
+            onCancel={() => {
+              setShowForm(false);
+              reset();
+              setCustomFieldValues({});
+            }}
             register={register}
             errors={errors}
             isSubmitting={isSubmitting}
@@ -165,6 +207,9 @@ function PropertiesContent() {
 // Property Form Component
 interface PropertyFormProps {
   owners: Owner[];
+  customFields: CustomField[];
+  customFieldValues: Record<number, string>;
+  onCustomFieldChange: (fieldId: number, value: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   register: any;
@@ -172,7 +217,7 @@ interface PropertyFormProps {
   isSubmitting: boolean;
 }
 
-function PropertyForm({ owners, onSubmit, onCancel, register, errors, isSubmitting }: PropertyFormProps) {
+function PropertyForm({ owners, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting }: PropertyFormProps) {
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
@@ -252,6 +297,13 @@ function PropertyForm({ owners, onSubmit, onCancel, register, errors, isSubmitti
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
               <textarea {...register('notes')} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
             </div>
+
+            {/* Custom Fields */}
+            <CustomFieldsRenderer
+              fields={customFields}
+              values={customFieldValues}
+              onChange={onCustomFieldChange}
+            />
           </div>
 
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
@@ -331,7 +383,7 @@ function PropertyList({ properties, onRefresh }: PropertyListProps) {
                 </span>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                <button onClick={() => handleDelete(property.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                <button type="button" onClick={() => handleDelete(property.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
               </td>
             </tr>
           ))}

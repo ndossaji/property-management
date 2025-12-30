@@ -306,8 +306,8 @@ function OwnerList({ owners, onEdit, onDelete }: OwnerListProps) {
                 {owner.phone || '—'}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                <button onClick={() => onEdit(owner)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</button>
-                <button onClick={() => onDelete(owner.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
+                <button type="button" onClick={() => onEdit(owner)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</button>
+                <button type="button" onClick={() => onDelete(owner.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
               </td>
             </tr>
           ))}

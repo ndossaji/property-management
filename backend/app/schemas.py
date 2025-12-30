@@ -5,9 +5,9 @@ Request and response schemas for the Property Management API
 
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field
-from app.models import PropertyStatus, PropertyType, ExpenseCategory
+from app.models import PropertyStatus, PropertyType, ExpenseCategory, CustomFieldType
 
 
 # ============================================================================
@@ -74,12 +74,11 @@ class PropertyBase(BaseModel):
 
     notes: Optional[str] = None
 
-    owner_id: Optional[int] = None
-
 
 class PropertyCreate(PropertyBase):
     """Schema for creating a Property"""
-    pass
+    owner_ids: List[int] = Field(default_factory=list, description="List of owner IDs to assign to this property")
+    custom_fields: Optional[Dict[int, str]] = Field(None, description="Custom field values keyed by field_id")
 
 
 class PropertyUpdate(BaseModel):
@@ -97,7 +96,8 @@ class PropertyUpdate(BaseModel):
 
     notes: Optional[str] = None
 
-    owner_id: Optional[int] = None
+    owner_ids: Optional[List[int]] = Field(None, description="List of owner IDs to assign to this property")
+    custom_fields: Optional[Dict[int, str]] = Field(None, description="Custom field values keyed by field_id")
 
 
 class PropertyResponse(PropertyBase):
@@ -111,9 +111,9 @@ class PropertyResponse(PropertyBase):
         from_attributes = True
 
 
-class PropertyWithOwner(PropertyResponse):
+class PropertyWithOwners(PropertyResponse):
     """Schema for Property with owner details"""
-    owner: Optional[OwnerResponse] = None
+    owners: List[OwnerResponse] = []
 
     class Config:
         from_attributes = True
@@ -159,7 +159,7 @@ class ExpenseBase(BaseModel):
 
 class ExpenseCreate(ExpenseBase):
     """Schema for creating an Expense"""
-    pass
+    custom_fields: Dict[int, str] = Field(default_factory=dict, description="Custom field values keyed by field_id")
 
 
 class ExpenseUpdate(BaseModel):
@@ -171,6 +171,7 @@ class ExpenseUpdate(BaseModel):
     vendor: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
     property_id: Optional[int] = None
+    custom_fields: Optional[Dict[int, str]] = Field(None, description="Custom field values keyed by field_id")
 
 
 class ExpenseResponse(ExpenseBase):
@@ -202,3 +203,80 @@ class BulkExpenseResult(BaseModel):
     success_count: int
     error_count: int
     errors: List[str] = []
+
+
+# ============================================================================
+# Custom Field Schemas
+# ============================================================================
+
+class CustomFieldOptionBase(BaseModel):
+    """Base schema for CustomFieldOption"""
+    value: str = Field(..., min_length=1, max_length=255)
+    label: str = Field(..., min_length=1, max_length=255)
+    display_order: int = Field(default=0)
+
+
+class CustomFieldOptionCreate(CustomFieldOptionBase):
+    """Schema for creating a CustomFieldOption"""
+    pass
+
+
+class CustomFieldOptionResponse(CustomFieldOptionBase):
+    """Schema for CustomFieldOption response"""
+    id: int
+    field_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CustomFieldBase(BaseModel):
+    """Base schema for CustomField"""
+    name: str = Field(..., min_length=1, max_length=255)
+    field_type: CustomFieldType
+    entity_type: str = Field(..., pattern="^(expense|property)$")
+    is_required: bool = Field(default=False)
+    display_order: int = Field(default=0)
+
+
+class CustomFieldCreate(CustomFieldBase):
+    """Schema for creating a CustomField"""
+    options: List[CustomFieldOptionCreate] = Field(default_factory=list)
+
+
+class CustomFieldUpdate(BaseModel):
+    """Schema for updating a CustomField"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    is_required: Optional[bool] = None
+    display_order: Optional[int] = None
+    options: Optional[List[CustomFieldOptionCreate]] = None
+
+
+class CustomFieldResponse(CustomFieldBase):
+    """Schema for CustomField response"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    options: List[CustomFieldOptionResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ExpenseCustomFieldValueBase(BaseModel):
+    """Base schema for ExpenseCustomFieldValue"""
+    field_id: int
+    value: Optional[str] = None
+
+
+class ExpenseCustomFieldValueResponse(ExpenseCustomFieldValueBase):
+    """Schema for ExpenseCustomFieldValue response"""
+    id: int
+    expense_id: int
+    field: CustomFieldResponse
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

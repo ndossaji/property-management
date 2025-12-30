@@ -82,6 +82,10 @@ app.include_router(properties_router)
 from app.routes_expenses import router as expenses_router
 app.include_router(expenses_router)
 
+# Include custom field routes
+from app.routes_custom_fields import router as custom_fields_router
+app.include_router(custom_fields_router)
+
 
 if __name__ == "__main__":
     import uvicorn
