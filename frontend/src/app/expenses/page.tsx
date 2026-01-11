@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { expensesApi, propertiesApi, customFieldsApi, Property, Expense, ExpenseCategory, CustomField } from '@/lib/api';
+import { expensesApi, propertiesApi, customFieldsApi, Property, Expense, ExpenseCategory, ExpensePaidBy, CustomField } from '@/lib/api';
 import CustomFieldsManager from '@/components/CustomFieldsManager';
 import CustomFieldsRenderer from '@/components/CustomFieldsRenderer';
 
@@ -17,6 +17,7 @@ const expenseSchema = z.object({
   expense_date: z.string().min(1, 'Date is required'),
   vendor: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  paid_by: z.enum(['unpaid', 'property_management', 'owner']),
   property_id: z.number().min(1, 'Property is required'),
 });
 
@@ -40,6 +41,12 @@ const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
+const PAID_BY_OPTIONS: { value: ExpensePaidBy; label: string }[] = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'property_management', label: 'Property Management' },
+  { value: 'owner', label: 'Owner' },
+];
+
 function ExpensesContent() {
   const router = useRouter();
   const [properties, setProperties] = useState<Property[]>([]);
@@ -54,12 +61,14 @@ function ExpensesContent() {
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showCustomizeForm, setShowCustomizeForm] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [filterPropertyId, setFilterPropertyId] = useState<number | undefined>();
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       category: 'other',
+      paid_by: 'unpaid',
       expense_date: new Date().toISOString().split('T')[0],
     },
   });
@@ -97,16 +106,38 @@ function ExpensesContent() {
         custom_fields: customFieldValues,
       };
 
-      await expensesApi.create(expenseData as any);
+      if (editingExpense) {
+        await expensesApi.update(editingExpense.id, expenseData as any);
+      } else {
+        await expensesApi.create(expenseData as any);
+      }
       reset();
       setCustomFieldValues({});
       setShowForm(false);
+      setEditingExpense(null);
       loadData();
     } catch (err: any) {
-      setError(err.message || 'Failed to create expense');
+      setError(err.message || 'Failed to save expense');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleEdit = (expense: Expense) => {
+    setEditingExpense(expense);
+    reset({
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      expense_date: expense.expense_date,
+      vendor: expense.vendor,
+      notes: expense.notes,
+      paid_by: expense.paid_by,
+      property_id: expense.property_id,
+    });
+    // Load custom field values
+    setCustomFieldValues(expense.custom_fields || {});
+    setShowForm(true);
   };
 
   const handleDelete = async (id: number) => {
@@ -186,7 +217,7 @@ function ExpensesContent() {
                 Import CSV
               </button>
               <button
-                onClick={() => setShowForm(true)}
+                onClick={() => { setEditingExpense(null); reset({ category: 'other', expense_date: new Date().toISOString().split('T')[0] }); setCustomFieldValues({}); setShowForm(true); }}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
               >
                 <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -235,9 +266,10 @@ function ExpensesContent() {
           />
         )}
 
-        {/* Add Expense Form Modal */}
+        {/* Expense Form Modal */}
         {showForm && (
           <ExpenseForm
+            editingExpense={editingExpense}
             properties={properties}
             customFields={customFields}
             customFieldValues={customFieldValues}
@@ -247,6 +279,7 @@ function ExpensesContent() {
             onSubmit={handleSubmit(onSubmit)}
             onCancel={() => {
               setShowForm(false);
+              setEditingExpense(null);
               reset();
               setCustomFieldValues({});
             }}
@@ -278,6 +311,7 @@ function ExpensesContent() {
         <ExpenseList
           expenses={expenses}
           properties={properties}
+          onEdit={handleEdit}
           onDelete={handleDelete}
           onViewReceipts={(expense) => setSelectedExpense(expense)}
         />
@@ -288,6 +322,7 @@ function ExpensesContent() {
 
 // Expense Form Component
 interface ExpenseFormProps {
+  editingExpense: Expense | null;
   properties: Property[];
   customFields: CustomField[];
   customFieldValues: Record<number, string>;
@@ -300,13 +335,13 @@ interface ExpenseFormProps {
   setValue: any;
 }
 
-function ExpenseForm({ properties, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting, setValue }: ExpenseFormProps) {
+function ExpenseForm({ editingExpense, properties, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting, setValue }: ExpenseFormProps) {
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
         <form onSubmit={onSubmit}>
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add New Expense</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{editingExpense ? 'Edit Expense' : 'Add New Expense'}</h2>
           </div>
 
           <div className="px-6 py-4 space-y-4">
@@ -366,6 +401,16 @@ function ExpenseForm({ properties, customFields, customFieldValues, onCustomFiel
               </div>
             </div>
 
+            {/* Paid By */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Paid By</label>
+              <select {...register('paid_by')} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white">
+                {PAID_BY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
@@ -383,7 +428,7 @@ function ExpenseForm({ properties, customFields, customFieldValues, onCustomFiel
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
             <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</button>
             <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 disabled:opacity-50">
-              {isSubmitting ? 'Creating...' : 'Create Expense'}
+              {isSubmitting ? 'Saving...' : editingExpense ? 'Update Expense' : 'Create Expense'}
             </button>
           </div>
         </form>
@@ -396,13 +441,27 @@ function ExpenseForm({ properties, customFields, customFieldValues, onCustomFiel
 interface ExpenseListProps {
   expenses: Expense[];
   properties: Property[];
+  onEdit: (expense: Expense) => void;
   onDelete: (id: number) => void;
   onViewReceipts: (expense: Expense) => void;
 }
 
-function ExpenseList({ expenses, properties, onDelete, onViewReceipts }: ExpenseListProps) {
+function ExpenseList({ expenses, properties, onEdit, onDelete, onViewReceipts }: ExpenseListProps) {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  };
+
+  const getPaidByBadge = (paidBy: string) => {
+    switch (paidBy) {
+      case 'unpaid':
+        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">Unpaid</span>;
+      case 'property_management':
+        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">PM</span>;
+      case 'owner':
+        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Owner</span>;
+      default:
+        return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300">{paidBy}</span>;
+    }
   };
 
   if (expenses.length === 0) {
@@ -426,6 +485,7 @@ function ExpenseList({ expenses, properties, onDelete, onViewReceipts }: Expense
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Description</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Property</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Category</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Paid By</th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
           </tr>
@@ -448,6 +508,9 @@ function ExpenseList({ expenses, properties, onDelete, onViewReceipts }: Expense
                   {EXPENSE_CATEGORIES.find(c => c.value === expense.category)?.label || expense.category}
                 </span>
               </td>
+              <td className="px-6 py-4 whitespace-nowrap">
+                {getPaidByBadge(expense.paid_by)}
+              </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">
                 {formatCurrency(expense.amount)}
               </td>
@@ -455,6 +518,7 @@ function ExpenseList({ expenses, properties, onDelete, onViewReceipts }: Expense
                 <button type="button" onClick={() => onViewReceipts(expense)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">
                   Receipts ({expense.receipts?.length || 0})
                 </button>
+                <button type="button" onClick={() => onEdit(expense)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</button>
                 <button type="button" onClick={() => onDelete(expense.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
               </td>
             </tr>

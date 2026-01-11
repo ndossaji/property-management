@@ -55,6 +55,7 @@ function PropertiesContent() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showCustomizeForm, setShowCustomizeForm] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<PropertyFormData>({
     resolver: zodResolver(propertySchema),
@@ -98,16 +99,41 @@ function PropertiesContent() {
         custom_fields: customFieldValues,
       };
 
-      await propertiesApi.create(propertyData as any);
+      if (editingProperty) {
+        await propertiesApi.update(editingProperty.id, propertyData as any);
+      } else {
+        await propertiesApi.create(propertyData as any);
+      }
       reset();
       setCustomFieldValues({});
       setShowForm(false);
+      setEditingProperty(null);
       loadData();
     } catch (err: any) {
-      setError(err.message || 'Failed to create property');
+      setError(err.message || 'Failed to save property');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleEdit = (property: Property) => {
+    setEditingProperty(property);
+    reset({
+      street_address: property.street_address,
+      unit_number: property.unit_number,
+      city: property.city,
+      state: property.state,
+      zip_code: property.zip_code,
+      country: property.country,
+      nickname: property.nickname,
+      property_type: property.property_type,
+      status: property.status,
+      notes: property.notes,
+      owner_id: property.owner_id,
+    });
+    // Load custom field values
+    setCustomFieldValues(property.custom_fields || {});
+    setShowForm(true);
   };
 
   if (isLoading) {
@@ -144,7 +170,7 @@ function PropertiesContent() {
                 Customize Form
               </button>
               <button
-                onClick={() => setShowForm(true)}
+                onClick={() => { setEditingProperty(null); reset({ property_type: 'single_family', status: 'active', country: 'USA' }); setCustomFieldValues({}); setShowForm(true); }}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
               >
                 <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,6 +205,7 @@ function PropertiesContent() {
         {/* Property Form Modal */}
         {showForm && (
           <PropertyForm
+            editingProperty={editingProperty}
             owners={owners}
             customFields={customFields}
             customFieldValues={customFieldValues}
@@ -188,6 +215,7 @@ function PropertiesContent() {
             onSubmit={handleSubmit(onSubmit)}
             onCancel={() => {
               setShowForm(false);
+              setEditingProperty(null);
               reset();
               setCustomFieldValues({});
             }}
@@ -198,7 +226,7 @@ function PropertiesContent() {
         )}
 
         {/* Properties List */}
-        <PropertyList properties={properties} onRefresh={loadData} />
+        <PropertyList properties={properties} onEdit={handleEdit} onRefresh={loadData} />
       </main>
     </div>
   );
@@ -206,6 +234,7 @@ function PropertiesContent() {
 
 // Property Form Component
 interface PropertyFormProps {
+  editingProperty: Property | null;
   owners: Owner[];
   customFields: CustomField[];
   customFieldValues: Record<number, string>;
@@ -217,13 +246,13 @@ interface PropertyFormProps {
   isSubmitting: boolean;
 }
 
-function PropertyForm({ owners, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting }: PropertyFormProps) {
+function PropertyForm({ editingProperty, owners, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting }: PropertyFormProps) {
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
         <form onSubmit={onSubmit}>
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Add New Property</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{editingProperty ? 'Edit Property' : 'Add New Property'}</h2>
           </div>
 
           <div className="px-6 py-4 space-y-4">
@@ -309,7 +338,7 @@ function PropertyForm({ owners, customFields, customFieldValues, onCustomFieldCh
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
             <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600">Cancel</button>
             <button type="submit" disabled={isSubmitting} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 disabled:opacity-50">
-              {isSubmitting ? 'Creating...' : 'Create Property'}
+              {isSubmitting ? 'Saving...' : editingProperty ? 'Update Property' : 'Create Property'}
             </button>
           </div>
         </form>
@@ -321,10 +350,11 @@ function PropertyForm({ owners, customFields, customFieldValues, onCustomFieldCh
 // Property List Component
 interface PropertyListProps {
   properties: Property[];
+  onEdit: (property: Property) => void;
   onRefresh: () => void;
 }
 
-function PropertyList({ properties, onRefresh }: PropertyListProps) {
+function PropertyList({ properties, onEdit, onRefresh }: PropertyListProps) {
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this property?')) return;
     try {
@@ -382,7 +412,8 @@ function PropertyList({ properties, onRefresh }: PropertyListProps) {
                   {PROPERTY_STATUSES.find(s => s.value === property.status)?.label || property.status}
                 </span>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                <button type="button" onClick={() => onEdit(property)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300">Edit</button>
                 <button type="button" onClick={() => handleDelete(property.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
               </td>
             </tr>

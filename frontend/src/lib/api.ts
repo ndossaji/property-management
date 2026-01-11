@@ -125,6 +125,7 @@ export interface Property {
   owner_id: number | null;
   owner: Owner | null;
   full_address: string;
+  custom_fields?: Record<number, string>;
   created_at: string;
   updated_at: string;
 }
@@ -204,6 +205,8 @@ export interface ExpenseReceipt {
   created_at: string;
 }
 
+export type ExpensePaidBy = 'unpaid' | 'property_management' | 'owner';
+
 export interface Expense {
   id: number;
   description: string;
@@ -212,9 +215,11 @@ export interface Expense {
   expense_date: string;
   vendor: string | null;
   notes: string | null;
+  paid_by: ExpensePaidBy;
   property_id: number;
   property: Property | null;
   receipts: ExpenseReceipt[];
+  custom_fields?: Record<number, string>;
   created_at: string;
   updated_at: string;
 }
@@ -226,6 +231,7 @@ export interface ExpenseCreate {
   expense_date: string;
   vendor?: string | null;
   notes?: string | null;
+  paid_by?: ExpensePaidBy;
   property_id: number;
 }
 
@@ -437,4 +443,498 @@ export const customFieldsApi = {
 
   delete: (id: number) =>
     apiRequest<void>(`/api/custom-fields/${id}`, { method: 'DELETE' }),
+};
+
+
+// ============================================================================
+// Tenant API
+// ============================================================================
+
+export interface Tenant {
+  id: number;
+  property_id: number | null;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  alternate_phone: string | null;
+  address: string | null;
+  ssn_last_four: string | null;
+  date_of_birth: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
+  employer: string | null;
+  employer_phone: string | null;
+  monthly_income: number | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CHAVoucherStatus = 'pending' | 'active' | 'suspended' | 'terminated' | 'expired';
+
+export interface CHAVoucher {
+  id: number;
+  tenant_id: number;
+  voucher_number: string;
+  status: CHAVoucherStatus;
+  issue_date: string | null;
+  expiration_date: string | null;
+  portability_date: string | null;
+  payment_standard: number | null;
+  hap_amount: number | null;
+  tenant_portion: number | null;
+  cha_case_worker: string | null;
+  cha_case_worker_phone: string | null;
+  cha_case_worker_email: string | null;
+  bedroom_size: number | null;
+  is_portable: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantWithVoucher extends Tenant {
+  property: Property | null;
+  cha_voucher: CHAVoucher | null;
+}
+
+export interface TenantCreate {
+  property_id?: number | null;
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  alternate_phone?: string | null;
+  address?: string | null;
+  ssn_last_four?: string | null;
+  date_of_birth?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
+  employer?: string | null;
+  employer_phone?: string | null;
+  monthly_income?: number | null;
+  notes?: string | null;
+}
+
+export interface CHAVoucherCreate {
+  voucher_number: string;
+  status?: CHAVoucherStatus;
+  issue_date?: string | null;
+  expiration_date?: string | null;
+  portability_date?: string | null;
+  payment_standard?: number | null;
+  hap_amount?: number | null;
+  tenant_portion?: number | null;
+  cha_case_worker?: string | null;
+  cha_case_worker_phone?: string | null;
+  cha_case_worker_email?: string | null;
+  bedroom_size?: number | null;
+  is_portable?: boolean;
+  notes?: string | null;
+}
+
+export const tenantsApi = {
+  list: (params?: { search?: string; is_active?: boolean; has_voucher?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.is_active !== undefined) searchParams.set('is_active', params.is_active.toString());
+    if (params?.has_voucher !== undefined) searchParams.set('has_voucher', params.has_voucher.toString());
+    const query = searchParams.toString();
+    return apiRequest<TenantWithVoucher[]>(`/api/tenants${query ? `?${query}` : ''}`);
+  },
+
+  get: (id: number) => apiRequest<TenantWithVoucher>(`/api/tenants/${id}`),
+
+  create: (data: TenantCreate) =>
+    apiRequest<Tenant>('/api/tenants', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<TenantCreate>) =>
+    apiRequest<Tenant>(`/api/tenants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/tenants/${id}`, { method: 'DELETE' }),
+
+  // Voucher operations
+  getVoucher: (tenantId: number) =>
+    apiRequest<CHAVoucher>(`/api/tenants/${tenantId}/voucher`),
+
+  createVoucher: (tenantId: number, data: CHAVoucherCreate) =>
+    apiRequest<CHAVoucher>(`/api/tenants/${tenantId}/voucher`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateVoucher: (tenantId: number, data: Partial<CHAVoucherCreate>) =>
+    apiRequest<CHAVoucher>(`/api/tenants/${tenantId}/voucher`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteVoucher: (tenantId: number) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/voucher`, { method: 'DELETE' }),
+};
+
+
+// ============================================================================
+// Lease API
+// ============================================================================
+
+export type LeaseStatus = 'draft' | 'active' | 'expired' | 'terminated' | 'renewed';
+
+export interface Lease {
+  id: number;
+  tenant_id: number;
+  property_id: number;
+  start_date: string;
+  end_date: string;
+  move_in_date: string | null;
+  move_out_date: string | null;
+  monthly_rent: number;
+  security_deposit: number | null;
+  rent_due_day: number;
+  grace_period_days: number;
+  late_fee_amount: number | null;
+  late_fee_percentage: number | null;
+  daily_late_fee: number | null;
+  is_section_8: boolean;
+  cha_portion: number | null;
+  tenant_portion: number | null;
+  status: LeaseStatus;
+  lease_document_path: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeaseWithRelations extends Lease {
+  tenant: TenantWithVoucher;
+  property: Property;
+}
+
+export interface LeaseCreate {
+  tenant_id: number;
+  property_id: number;
+  start_date: string;
+  end_date: string;
+  monthly_rent: number;
+  move_in_date?: string | null;
+  security_deposit?: number | null;
+  rent_due_day?: number;
+  grace_period_days?: number;
+  late_fee_amount?: number | null;
+  late_fee_percentage?: number | null;
+  daily_late_fee?: number | null;
+  is_section_8?: boolean;
+  cha_portion?: number | null;
+  tenant_portion?: number | null;
+  status?: LeaseStatus;
+  notes?: string | null;
+}
+
+export const leasesApi = {
+  list: (params?: { tenant_id?: number; property_id?: number; status?: LeaseStatus; is_section_8?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.tenant_id) searchParams.set('tenant_id', params.tenant_id.toString());
+    if (params?.property_id) searchParams.set('property_id', params.property_id.toString());
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.is_section_8 !== undefined) searchParams.set('is_section_8', params.is_section_8.toString());
+    const query = searchParams.toString();
+    return apiRequest<LeaseWithRelations[]>(`/api/leases${query ? `?${query}` : ''}`);
+  },
+
+  get: (id: number) => apiRequest<LeaseWithRelations>(`/api/leases/${id}`),
+
+  create: (data: LeaseCreate) =>
+    apiRequest<Lease>('/api/leases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<LeaseCreate>) =>
+    apiRequest<Lease>(`/api/leases/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/leases/${id}`, { method: 'DELETE' }),
+
+  // Workflow operations
+  activate: (id: number) =>
+    apiRequest<Lease>(`/api/leases/${id}/activate`, { method: 'POST' }),
+
+  terminate: (id: number) =>
+    apiRequest<Lease>(`/api/leases/${id}/terminate`, { method: 'POST' }),
+
+  renew: (id: number, data: { new_end_date: string; new_monthly_rent?: number }) =>
+    apiRequest<Lease>(`/api/leases/${id}/renew`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+};
+
+
+// ============================================================================
+// Rent Payment API
+// ============================================================================
+
+export type PaymentStatus = 'pending' | 'completed' | 'partial' | 'failed' | 'refunded';
+export type PaymentMethod = 'cash' | 'check' | 'money_order' | 'bank_transfer' | 'credit_card' | 'debit_card' | 'cha_voucher' | 'other';
+export type PaidBy = 'property_management' | 'owner';
+
+export interface RentPayment {
+  id: number;
+  lease_id: number;
+  amount: number;
+  payment_date: string;
+  payment_method: PaymentMethod;
+  status: PaymentStatus;
+  reference_number: string | null;
+  is_cha_payment: boolean;
+  cha_payment_reference: string | null;
+  notes: string | null;
+  receipt_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentPaymentWithLease extends RentPayment {
+  lease: LeaseWithRelations;
+}
+
+export interface RentPaymentCreate {
+  lease_id: number;
+  amount: number;
+  payment_date: string;
+  payment_method: PaymentMethod;
+  status?: PaymentStatus;
+  reference_number?: string | null;
+  is_cha_payment?: boolean;
+  cha_payment_reference?: string | null;
+  notes?: string | null;
+}
+
+export interface PaymentSummary {
+  total_expected: number;
+  total_paid: number;
+  total_outstanding: number;
+  total_late_fees: number;
+  total_late_fees_paid: number;
+  total_late_fees_outstanding: number;
+  payments_count: number;
+  late_fees_count: number;
+}
+
+export const paymentsApi = {
+  list: (params?: {
+    lease_id?: number;
+    status?: PaymentStatus;
+    payment_method?: PaymentMethod;
+    start_date?: string;
+    end_date?: string;
+    is_cha_payment?: boolean;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.lease_id) searchParams.set('lease_id', params.lease_id.toString());
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.payment_method) searchParams.set('payment_method', params.payment_method);
+    if (params?.start_date) searchParams.set('start_date', params.start_date);
+    if (params?.end_date) searchParams.set('end_date', params.end_date);
+    if (params?.is_cha_payment !== undefined) searchParams.set('is_cha_payment', params.is_cha_payment.toString());
+    const query = searchParams.toString();
+    return apiRequest<RentPaymentWithLease[]>(`/api/payments${query ? `?${query}` : ''}`);
+  },
+
+  get: (id: number) => apiRequest<RentPaymentWithLease>(`/api/payments/${id}`),
+
+  create: (data: RentPaymentCreate) =>
+    apiRequest<RentPayment>('/api/payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<RentPaymentCreate>) =>
+    apiRequest<RentPayment>(`/api/payments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/payments/${id}`, { method: 'DELETE' }),
+
+  getSummary: (leaseId: number) =>
+    apiRequest<PaymentSummary>(`/api/payments/summary/${leaseId}`),
+};
+
+
+// ============================================================================
+// Late Fees API
+// ============================================================================
+
+export interface LateFee {
+  id: number;
+  lease_id: number;
+  amount: number;
+  fee_date: string;
+  for_period_start: string;
+  for_period_end: string;
+  is_paid: boolean;
+  paid_date: string | null;
+  is_waived: boolean;
+  waived_date: string | null;
+  waived_reason: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LateFeeWithLease extends LateFee {
+  lease: LeaseWithRelations;
+}
+
+export interface LateFeeCreate {
+  lease_id: number;
+  amount: number;
+  fee_date: string;
+  for_period_start: string;
+  for_period_end: string;
+  notes?: string | null;
+}
+
+export const lateFeesApi = {
+  list: (params?: { lease_id?: number; is_paid?: boolean; is_waived?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.lease_id) searchParams.set('lease_id', params.lease_id.toString());
+    if (params?.is_paid !== undefined) searchParams.set('is_paid', params.is_paid.toString());
+    if (params?.is_waived !== undefined) searchParams.set('is_waived', params.is_waived.toString());
+    const query = searchParams.toString();
+    return apiRequest<LateFeeWithLease[]>(`/api/late-fees${query ? `?${query}` : ''}`);
+  },
+
+  get: (id: number) => apiRequest<LateFeeWithLease>(`/api/late-fees/${id}`),
+
+  create: (data: LateFeeCreate) =>
+    apiRequest<LateFee>('/api/late-fees', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<LateFeeCreate>) =>
+    apiRequest<LateFee>(`/api/late-fees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/late-fees/${id}`, { method: 'DELETE' }),
+
+  markPaid: (id: number) =>
+    apiRequest<LateFee>(`/api/late-fees/${id}/pay`, { method: 'POST' }),
+
+  waive: (id: number, reason: string) =>
+    apiRequest<LateFee>(`/api/late-fees/${id}/waive?reason=${encodeURIComponent(reason)}`, { method: 'POST' }),
+};
+
+
+// ============================================================================
+// Owner Payment API
+// ============================================================================
+
+export interface OwnerPayment {
+  id: number;
+  owner_id: number;
+  property_id: number | null;
+  amount: number;
+  payment_date: string;
+  payment_method: PaymentMethod;
+  reference_number: string | null;
+  description: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OwnerPaymentWithDetails extends OwnerPayment {
+  owner: Owner;
+  property: Property | null;
+}
+
+export interface OwnerPaymentCreate {
+  owner_id: number;
+  property_id?: number | null;
+  amount: number;
+  payment_date: string;
+  payment_method?: PaymentMethod;
+  reference_number?: string | null;
+  description?: string | null;
+  notes?: string | null;
+}
+
+export interface OwnerPaymentSummary {
+  total_payments: number;
+  payments_count: number;
+  by_owner: Record<number, number>;
+  by_property: Record<number, number>;
+}
+
+export const ownerPaymentsApi = {
+  list: (params?: {
+    owner_id?: number;
+    property_id?: number;
+    payment_method?: PaymentMethod;
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.owner_id) searchParams.set('owner_id', params.owner_id.toString());
+    if (params?.property_id) searchParams.set('property_id', params.property_id.toString());
+    if (params?.payment_method) searchParams.set('payment_method', params.payment_method);
+    if (params?.start_date) searchParams.set('start_date', params.start_date);
+    if (params?.end_date) searchParams.set('end_date', params.end_date);
+    const query = searchParams.toString();
+    return apiRequest<OwnerPaymentWithDetails[]>(`/api/owner-payments${query ? `?${query}` : ''}`);
+  },
+
+  get: (id: number) => apiRequest<OwnerPaymentWithDetails>(`/api/owner-payments/${id}`),
+
+  create: (data: OwnerPaymentCreate) =>
+    apiRequest<OwnerPayment>('/api/owner-payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: Partial<OwnerPaymentCreate>) =>
+    apiRequest<OwnerPayment>(`/api/owner-payments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: number) =>
+    apiRequest<void>(`/api/owner-payments/${id}`, { method: 'DELETE' }),
+
+  getSummary: (params?: {
+    owner_id?: number;
+    property_id?: number;
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.owner_id) searchParams.set('owner_id', params.owner_id.toString());
+    if (params?.property_id) searchParams.set('property_id', params.property_id.toString());
+    if (params?.start_date) searchParams.set('start_date', params.start_date);
+    if (params?.end_date) searchParams.set('end_date', params.end_date);
+    const query = searchParams.toString();
+    return apiRequest<OwnerPaymentSummary>(`/api/owner-payments/summary${query ? `?${query}` : ''}`);
+  },
 };

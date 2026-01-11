@@ -86,6 +86,26 @@ app.include_router(expenses_router)
 from app.routes_custom_fields import router as custom_fields_router
 app.include_router(custom_fields_router)
 
+# Include tenant routes
+from app.routes_tenants import router as tenants_router
+from app.routes_tenants import voucher_router as vouchers_router
+app.include_router(tenants_router)
+app.include_router(vouchers_router)
+
+# Include lease routes
+from app.routes_leases import router as leases_router
+app.include_router(leases_router)
+
+# Include payment and late fee routes
+from app.routes_payments import router as payments_router
+from app.routes_payments import late_fee_router
+app.include_router(payments_router)
+app.include_router(late_fee_router)
+
+# Include owner payment routes
+from app.routes_owner_payments import router as owner_payments_router
+app.include_router(owner_payments_router)
+
 
 if __name__ == "__main__":
     import uvicorn
