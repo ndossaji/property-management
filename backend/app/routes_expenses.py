@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Expense, ExpenseReceipt, Property, ExpenseCategory, ExpenseCustomFieldValue, CustomField, CustomFieldOption, CustomFieldType
+from app.models import Expense, ExpenseReceipt, Property, ExpenseCategory, ExpenseCustomFieldValue, CustomField, CustomFieldOption, CustomFieldType, property_owners
 from app.schemas import (
     ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseWithProperty,
     ExpenseReceiptResponse, BulkExpenseResult
@@ -37,6 +37,7 @@ async def list_expenses(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     property_id: Optional[int] = Query(None, description="Filter by property"),
+    owner_id: Optional[int] = Query(None, description="Filter by owner (shows expenses for all properties owned by this owner)"),
     category: Optional[ExpenseCategory] = Query(None, description="Filter by category"),
     start_date: Optional[date] = Query(None, description="Filter by start date"),
     end_date: Optional[date] = Query(None, description="Filter by end date"),
@@ -45,16 +46,22 @@ async def list_expenses(
 ):
     """List all expenses with optional filtering and pagination"""
     query = db.query(Expense)
-    
+
     if property_id:
         query = query.filter(Expense.property_id == property_id)
+    if owner_id:
+        # Filter by owner - get all properties owned by this owner, then filter expenses
+        owner_property_ids = db.query(property_owners.c.property_id).filter(
+            property_owners.c.owner_id == owner_id
+        ).subquery()
+        query = query.filter(Expense.property_id.in_(owner_property_ids))
     if category:
         query = query.filter(Expense.category == category)
     if start_date:
         query = query.filter(Expense.expense_date >= start_date)
     if end_date:
         query = query.filter(Expense.expense_date <= end_date)
-    
+
     return query.order_by(Expense.expense_date.desc()).offset(skip).limit(limit).all()
 
 
@@ -439,6 +446,7 @@ async def list_categories(
 @router.get("/export/csv")
 async def export_expenses_csv(
     property_id: Optional[int] = Query(None, description="Filter by property"),
+    owner_id: Optional[int] = Query(None, description="Filter by owner (shows expenses for all properties owned by this owner)"),
     category: Optional[ExpenseCategory] = Query(None, description="Filter by category"),
     start_date: Optional[date] = Query(None, description="Filter by start date"),
     end_date: Optional[date] = Query(None, description="Filter by end date"),
@@ -455,6 +463,12 @@ async def export_expenses_csv(
 
     if property_id:
         query = query.filter(Expense.property_id == property_id)
+    if owner_id:
+        # Filter by owner - get all properties owned by this owner, then filter expenses
+        owner_property_ids = db.query(property_owners.c.property_id).filter(
+            property_owners.c.owner_id == owner_id
+        ).subquery()
+        query = query.filter(Expense.property_id.in_(owner_property_ids))
     if category:
         query = query.filter(Expense.category == category)
     if start_date:

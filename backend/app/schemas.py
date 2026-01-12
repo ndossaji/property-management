@@ -698,3 +698,22 @@ class OwnerPaymentSummary(BaseModel):
     payments_count: int
     by_owner: Dict[int, Decimal] = Field(default_factory=dict)
     by_property: Dict[int, Decimal] = Field(default_factory=dict)
+
+
+class PropertyBalanceResponse(BaseModel):
+    """Property balance showing expenses vs payments"""
+    property_id: int
+    property_address: str
+    property_nickname: Optional[str] = None
+    total_expenses: Decimal
+    total_payments: Decimal
+    balance_owed: Decimal  # Positive = owner owes us, Negative = we owe owner
+    owner_names: List[str] = Field(default_factory=list)
+
+
+class PropertyBalancesSummary(BaseModel):
+    """Summary of all property balances"""
+    properties: List[PropertyBalanceResponse]
+    total_expenses: Decimal
+    total_payments: Decimal
+    total_balance_owed: Decimal

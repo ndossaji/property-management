@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { expensesApi, propertiesApi, customFieldsApi, Property, Expense, ExpenseCategory, ExpensePaidBy, CustomField } from '@/lib/api';
+import { expensesApi, propertiesApi, customFieldsApi, ownersApi, Property, Expense, ExpenseCategory, ExpensePaidBy, CustomField, Owner } from '@/lib/api';
 import CustomFieldsManager from '@/components/CustomFieldsManager';
 import CustomFieldsRenderer from '@/components/CustomFieldsRenderer';
 
@@ -50,6 +50,7 @@ const PAID_BY_OPTIONS: { value: ExpensePaidBy; label: string }[] = [
 function ExpensesContent() {
   const router = useRouter();
   const [properties, setProperties] = useState<Property[]>([]);
+  const [owners, setOwners] = useState<Owner[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<number, string>>({});
@@ -62,7 +63,9 @@ function ExpensesContent() {
   const [showCustomizeForm, setShowCustomizeForm] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [filterPropertyId, setFilterPropertyId] = useState<number | undefined>();
+  const [filterPropertyIds, setFilterPropertyIds] = useState<number[]>([]);
+  const [filterOwnerIds, setFilterOwnerIds] = useState<number[]>([]);
+  const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -75,17 +78,36 @@ function ExpensesContent() {
 
   useEffect(() => {
     loadData();
-  }, [filterPropertyId]);
+  }, []);
+
+  // Filter expenses client-side based on selected filters
+  useEffect(() => {
+    let filtered = allExpenses;
+    if (filterPropertyIds.length > 0) {
+      filtered = filtered.filter(e => filterPropertyIds.includes(e.property_id));
+    }
+    if (filterOwnerIds.length > 0) {
+      // Get property IDs for selected owners
+      const ownerPropertyIds = properties
+        .filter(p => p.owners?.some(o => filterOwnerIds.includes(o.id)))
+        .map(p => p.id);
+      filtered = filtered.filter(e => ownerPropertyIds.includes(e.property_id));
+    }
+    setExpenses(filtered);
+  }, [filterPropertyIds, filterOwnerIds, allExpenses, properties]);
 
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [propertiesData, expensesData, customFieldsData] = await Promise.all([
+      const [propertiesData, ownersData, expensesData, customFieldsData] = await Promise.all([
         propertiesApi.list(),
-        expensesApi.list({ property_id: filterPropertyId }),
+        ownersApi.list(),
+        expensesApi.list(),
         customFieldsApi.list('expense'),
       ]);
       setProperties(propertiesData);
+      setOwners(ownersData);
+      setAllExpenses(expensesData);
       setExpenses(expensesData);
       setCustomFields(customFieldsData);
     } catch (err: any) {
@@ -93,6 +115,22 @@ function ExpensesContent() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const togglePropertyFilter = (propertyId: number) => {
+    setFilterPropertyIds(prev =>
+      prev.includes(propertyId)
+        ? prev.filter(id => id !== propertyId)
+        : [...prev, propertyId]
+    );
+  };
+
+  const toggleOwnerFilter = (ownerId: number) => {
+    setFilterOwnerIds(prev =>
+      prev.includes(ownerId)
+        ? prev.filter(id => id !== ownerId)
+        : [...prev, ownerId]
+    );
   };
 
   const onSubmit = async (data: ExpenseFormData) => {
@@ -154,8 +192,9 @@ function ExpensesContent() {
     try {
       setIsExporting(true);
       setError(null);
+      // Export with first selected property if any, or all properties
       await expensesApi.exportCsv({
-        property_id: filterPropertyId,
+        property_id: filterPropertyIds.length === 1 ? filterPropertyIds[0] : undefined,
       });
     } catch (err: any) {
       setError(err.message || 'Failed to export CSV');
@@ -184,7 +223,7 @@ function ExpensesContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </button>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Expenses</h1>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Property Expenses</h1>
             </div>
             <div className="flex space-x-2">
               <button
@@ -237,21 +276,76 @@ function ExpensesContent() {
           </div>
         )}
 
-        {/* Filter */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by Property</label>
-          <select
-            value={filterPropertyId || ''}
-            onChange={(e) => setFilterPropertyId(e.target.value ? parseInt(e.target.value) : undefined)}
-            className="block w-full sm:w-64 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white"
-          >
-            <option value="">All Properties</option>
-            {properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.nickname || property.street_address}
-              </option>
-            ))}
-          </select>
+        {/* Filters */}
+        <div className="mb-6 flex flex-wrap gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Filter by Property {filterPropertyIds.length > 0 && `(${filterPropertyIds.length})`}
+            </label>
+            <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto w-64">
+              {properties.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No properties</p>
+              ) : (
+                <div className="space-y-2">
+                  {properties.map((property) => (
+                    <label key={property.id} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filterPropertyIds.includes(property.id)}
+                        onChange={() => togglePropertyFilter(property.id)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300 truncate">
+                        {property.nickname || property.street_address}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            {filterPropertyIds.length > 0 && (
+              <button
+                onClick={() => setFilterPropertyIds([])}
+                className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Filter by Owner {filterOwnerIds.length > 0 && `(${filterOwnerIds.length})`}
+            </label>
+            <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md p-3 max-h-48 overflow-y-auto w-64">
+              {owners.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">No owners</p>
+              ) : (
+                <div className="space-y-2">
+                  {owners.map((owner) => (
+                    <label key={owner.id} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={filterOwnerIds.includes(owner.id)}
+                        onChange={() => toggleOwnerFilter(owner.id)}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300 truncate">
+                        {owner.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            {filterOwnerIds.length > 0 && (
+              <button
+                onClick={() => setFilterOwnerIds([])}
+                className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Customize Form Modal */}

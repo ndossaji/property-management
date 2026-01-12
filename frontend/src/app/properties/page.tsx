@@ -93,11 +93,17 @@ function PropertiesContent() {
       setIsSubmitting(true);
       setError(null);
 
+      // Convert owner_id to owner_ids array format expected by backend
+      const owner_ids = data.owner_id ? [data.owner_id] : [];
+
       const propertyData = {
         ...data,
-        owner_id: data.owner_id || null,
+        owner_ids,
         custom_fields: customFieldValues,
       };
+
+      // Remove owner_id since backend expects owner_ids
+      delete (propertyData as any).owner_id;
 
       if (editingProperty) {
         await propertiesApi.update(editingProperty.id, propertyData as any);
@@ -118,6 +124,10 @@ function PropertiesContent() {
 
   const handleEdit = (property: Property) => {
     setEditingProperty(property);
+    // Get the first owner's ID from the owners array (backend uses many-to-many)
+    const ownerId = property.owners && property.owners.length > 0
+      ? property.owners[0].id
+      : property.owner_id;
     reset({
       street_address: property.street_address,
       unit_number: property.unit_number,
@@ -129,7 +139,7 @@ function PropertiesContent() {
       property_type: property.property_type,
       status: property.status,
       notes: property.notes,
-      owner_id: property.owner_id,
+      owner_id: ownerId,
     });
     // Load custom field values
     setCustomFieldValues(property.custom_fields || {});
@@ -397,7 +407,9 @@ function PropertyList({ properties, onEdit, onRefresh }: PropertyListProps) {
                 <div className="text-sm text-gray-500 dark:text-gray-400">{property.full_address}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                {property.owner?.name || '—'}
+                {property.owners && property.owners.length > 0
+                  ? property.owners.map(o => o.name).join(', ')
+                  : '—'}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                 {PROPERTY_TYPES.find(t => t.value === property.property_type)?.label || property.property_type}

@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import OwnerPayment, Owner, Property, PaymentMethod
+from app.models import OwnerPayment, Owner, Property, PaymentMethod, Expense
 from app.schemas import (
     OwnerPaymentCreate, OwnerPaymentUpdate, OwnerPaymentResponse,
-    OwnerPaymentWithDetails, OwnerPaymentSummary
+    OwnerPaymentWithDetails, OwnerPaymentSummary,
+    PropertyBalanceResponse, PropertyBalancesSummary
 )
 from app.auth import get_current_active_user, User
 
@@ -102,6 +103,70 @@ async def get_owner_payments_summary(
         payments_count=count,
         by_owner=by_owner,
         by_property=by_property
+    )
+
+
+@router.get("/property-balances", response_model=PropertyBalancesSummary)
+async def get_property_balances(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get balances for all properties showing expenses vs payments received from owners"""
+    # Get all properties
+    properties = db.query(Property).all()
+
+    # Get expenses grouped by property
+    expenses_by_property = {}
+    expenses_query = db.query(
+        Expense.property_id,
+        func.sum(Expense.amount)
+    ).group_by(Expense.property_id).all()
+    for prop_id, total in expenses_query:
+        expenses_by_property[prop_id] = total or Decimal('0')
+
+    # Get owner payments grouped by property
+    payments_by_property = {}
+    payments_query = db.query(
+        OwnerPayment.property_id,
+        func.sum(OwnerPayment.amount)
+    ).filter(OwnerPayment.property_id.isnot(None)).group_by(OwnerPayment.property_id).all()
+    for prop_id, total in payments_query:
+        payments_by_property[prop_id] = total or Decimal('0')
+
+    # Build response
+    property_balances = []
+    total_expenses = Decimal('0')
+    total_payments = Decimal('0')
+
+    for prop in properties:
+        prop_expenses = expenses_by_property.get(prop.id, Decimal('0'))
+        prop_payments = payments_by_property.get(prop.id, Decimal('0'))
+        balance = prop_expenses - prop_payments
+
+        total_expenses += prop_expenses
+        total_payments += prop_payments
+
+        # Get owner names for this property
+        owner_names = [owner.name for owner in prop.owners] if prop.owners else []
+
+        property_balances.append(PropertyBalanceResponse(
+            property_id=prop.id,
+            property_address=prop.full_address,
+            property_nickname=prop.nickname,
+            total_expenses=prop_expenses,
+            total_payments=prop_payments,
+            balance_owed=balance,
+            owner_names=owner_names
+        ))
+
+    # Sort by balance owed (highest first)
+    property_balances.sort(key=lambda x: x.balance_owed, reverse=True)
+
+    return PropertyBalancesSummary(
+        properties=property_balances,
+        total_expenses=total_expenses,
+        total_payments=total_payments,
+        total_balance_owed=total_expenses - total_payments
     )
 
 

@@ -124,6 +124,7 @@ export interface Property {
   notes: string | null;
   owner_id: number | null;
   owner: Owner | null;
+  owners: Owner[];  // Many-to-many relationship
   full_address: string;
   custom_fields?: Record<number, string>;
   created_at: string;
@@ -244,12 +245,14 @@ export interface BulkExpenseResult {
 export const expensesApi = {
   list: (params?: {
     property_id?: number;
+    owner_id?: number;
     category?: ExpenseCategory;
     start_date?: string;
     end_date?: string;
   }) => {
     const searchParams = new URLSearchParams();
     if (params?.property_id) searchParams.set('property_id', params.property_id.toString());
+    if (params?.owner_id) searchParams.set('owner_id', params.owner_id.toString());
     if (params?.category) searchParams.set('category', params.category);
     if (params?.start_date) searchParams.set('start_date', params.start_date);
     if (params?.end_date) searchParams.set('end_date', params.end_date);
@@ -937,4 +940,25 @@ export const ownerPaymentsApi = {
     const query = searchParams.toString();
     return apiRequest<OwnerPaymentSummary>(`/api/owner-payments/summary${query ? `?${query}` : ''}`);
   },
+
+  getPropertyBalances: () =>
+    apiRequest<PropertyBalancesSummary>('/api/owner-payments/property-balances'),
 };
+
+// Property Balance types
+export interface PropertyBalanceResponse {
+  property_id: number;
+  property_address: string;
+  property_nickname: string | null;
+  total_expenses: number;
+  total_payments: number;
+  balance_owed: number;
+  owner_names: string[];
+}
+
+export interface PropertyBalancesSummary {
+  properties: PropertyBalanceResponse[];
+  total_expenses: number;
+  total_payments: number;
+  total_balance_owed: number;
+}
