@@ -726,15 +726,19 @@ class PropertyBalanceResponse(BaseModel):
     property_id: int
     property_address: str
     property_nickname: Optional[str] = None
-    total_expenses: Decimal
-    total_payments: Decimal
-    balance_owed: Decimal  # Positive = owner owes us, Negative = we owe owner
+    pm_expenses: Decimal  # Expenses paid by Property Management
+    owner_expenses: Decimal  # Expenses paid by Owner
+    unpaid_expenses: Decimal  # Expenses not yet paid
+    payments_to_pm: Decimal  # Payments from owner to PM
+    balance_owed: Decimal  # PM Expenses - Payments to PM (what owner owes PM)
     owner_names: List[str] = Field(default_factory=list)
 
 
 class PropertyBalancesSummary(BaseModel):
     """Summary of all property balances"""
     properties: List[PropertyBalanceResponse]
-    total_expenses: Decimal
-    total_payments: Decimal
+    total_pm_expenses: Decimal
+    total_owner_expenses: Decimal
+    total_unpaid_expenses: Decimal
+    total_payments_to_pm: Decimal
     total_balance_owed: Decimal

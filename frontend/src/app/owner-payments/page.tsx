@@ -53,6 +53,7 @@ function PropertyBalancesContent() {
   const [filterPropertyIds, setFilterPropertyIds] = useState<number[]>([]);
   const [filterOwnerIds, setFilterOwnerIds] = useState<number[]>([]);
   const [selectedPaymentForAttachments, setSelectedPaymentForAttachments] = useState<OwnerPaymentWithDetails | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
@@ -84,14 +85,18 @@ function PropertyBalancesContent() {
     }
 
     // Recalculate totals based on filtered properties
-    const total_expenses = filteredProperties.reduce((sum, p) => sum + p.total_expenses, 0);
-    const total_payments = filteredProperties.reduce((sum, p) => sum + p.total_payments, 0);
+    const total_pm_expenses = filteredProperties.reduce((sum, p) => sum + p.pm_expenses, 0);
+    const total_owner_expenses = filteredProperties.reduce((sum, p) => sum + p.owner_expenses, 0);
+    const total_unpaid_expenses = filteredProperties.reduce((sum, p) => sum + p.unpaid_expenses, 0);
+    const total_payments_to_pm = filteredProperties.reduce((sum, p) => sum + p.payments_to_pm, 0);
     const total_balance_owed = filteredProperties.reduce((sum, p) => sum + p.balance_owed, 0);
 
     setBalances({
       properties: filteredProperties,
-      total_expenses,
-      total_payments,
+      total_pm_expenses,
+      total_owner_expenses,
+      total_unpaid_expenses,
+      total_payments_to_pm,
       total_balance_owed,
     });
   }, [filterPropertyIds, filterOwnerIds, allBalances, properties]);
@@ -145,11 +150,23 @@ function PropertyBalancesContent() {
         description: data.description || null,
         notes: data.notes || null,
       };
+      let paymentId: number;
       if (editingPayment) {
         await ownerPaymentsApi.update(editingPayment.id, paymentData);
+        paymentId = editingPayment.id;
       } else {
-        await ownerPaymentsApi.create(paymentData);
+        const newPayment = await ownerPaymentsApi.create(paymentData);
+        paymentId = newPayment.id;
       }
+      // Upload any pending files
+      for (const file of pendingFiles) {
+        try {
+          await ownerPaymentsApi.uploadAttachment(paymentId, file);
+        } catch (uploadErr: any) {
+          console.error('Failed to upload file:', file.name, uploadErr);
+        }
+      }
+      setPendingFiles([]);
       reset({ payment_date: new Date().toISOString().split('T')[0] });
       setShowForm(false);
       setEditingPayment(null);
@@ -247,19 +264,29 @@ function PropertyBalancesContent() {
 
         {/* Summary Cards */}
         {balances && (
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Expenses</p>
-              <p className="text-2xl font-bold text-red-600 dark:text-red-400">{formatCurrency(balances.total_expenses)}</p>
+          <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">PM Expenses</p>
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">{formatCurrency(balances.total_pm_expenses)}</p>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Payments Received</p>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatCurrency(balances.total_payments)}</p>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Owner Expenses</p>
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(balances.total_owner_expenses)}</p>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Balance Owed</p>
-              <p className={`text-2xl font-bold ${balances.total_balance_owed > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Payments to PM</p>
+              <p className="text-xl font-bold text-green-600 dark:text-green-400">{formatCurrency(balances.total_payments_to_pm)}</p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Balance Owed</p>
+              <p className={`text-xl font-bold ${balances.total_balance_owed > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
                 {formatCurrency(balances.total_balance_owed)}
+              </p>
+            </div>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Unpaid Expenses</p>
+              <p className={`text-xl font-bold ${balances.total_unpaid_expenses > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                {formatCurrency(balances.total_unpaid_expenses)}
               </p>
             </div>
           </div>
@@ -381,10 +408,12 @@ function PropertyBalancesContent() {
             properties={properties}
             selectedPropertyId={selectedPropertyId}
             onSubmit={handleSubmit(onSubmit)}
-            onCancel={() => { setShowForm(false); setEditingPayment(null); setSelectedPropertyId(null); }}
+            onCancel={() => { setShowForm(false); setEditingPayment(null); setSelectedPropertyId(null); setPendingFiles([]); }}
             register={register}
             errors={errors}
             isSubmitting={isSubmitting}
+            pendingFiles={pendingFiles}
+            onFilesChange={setPendingFiles}
           />
         )}
 
@@ -425,18 +454,20 @@ function PropertyBalancesList({ balances, onAddPayment, formatCurrency }: Proper
       <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
         <thead className="bg-gray-50 dark:bg-gray-700">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Property</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Owner(s)</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Expenses</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Payments</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Balance Owed</th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Property</th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Owner(s)</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">PM Expenses</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Owner Expenses</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Payments to PM</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Balance Owed</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Unpaid Expenses</th>
+            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
           </tr>
         </thead>
         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
           {balances.map((balance) => (
             <tr key={balance.property_id} className={balance.balance_owed > 0 ? 'bg-orange-50 dark:bg-orange-900/10' : ''}>
-              <td className="px-6 py-4">
+              <td className="px-4 py-4">
                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                   {balance.property_nickname || balance.property_address}
                 </div>
@@ -444,15 +475,19 @@ function PropertyBalancesList({ balances, onAddPayment, formatCurrency }: Proper
                   <div className="text-sm text-gray-500 dark:text-gray-400">{balance.property_address}</div>
                 )}
               </td>
-              <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+              <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
                 {balance.owner_names.length > 0 ? balance.owner_names.join(', ') : '-'}
               </td>
-              <td className="px-6 py-4 text-sm text-right text-red-600 dark:text-red-400">{formatCurrency(balance.total_expenses)}</td>
-              <td className="px-6 py-4 text-sm text-right text-green-600 dark:text-green-400">{formatCurrency(balance.total_payments)}</td>
-              <td className={`px-6 py-4 text-sm text-right font-semibold ${balance.balance_owed > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
+              <td className="px-4 py-4 text-sm text-right text-red-600 dark:text-red-400">{formatCurrency(balance.pm_expenses)}</td>
+              <td className="px-4 py-4 text-sm text-right text-blue-600 dark:text-blue-400">{formatCurrency(balance.owner_expenses)}</td>
+              <td className="px-4 py-4 text-sm text-right text-green-600 dark:text-green-400">{formatCurrency(balance.payments_to_pm)}</td>
+              <td className={`px-4 py-4 text-sm text-right font-semibold ${balance.balance_owed > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-green-600 dark:text-green-400'}`}>
                 {formatCurrency(balance.balance_owed)}
               </td>
-              <td className="px-6 py-4 text-right">
+              <td className={`px-4 py-4 text-sm text-right ${balance.unpaid_expenses > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                {formatCurrency(balance.unpaid_expenses)}
+              </td>
+              <td className="px-4 py-4 text-right">
                 {balance.balance_owed > 0 && (
                   <button
                     onClick={() => onAddPayment(balance.property_id)}
@@ -483,10 +518,23 @@ interface PaymentFormModalProps {
   register: any;
   errors: any;
   isSubmitting: boolean;
+  pendingFiles: File[];
+  onFilesChange: (files: File[]) => void;
 }
 
-function PaymentFormModal({ editingPayment, owners, properties, selectedPropertyId, onSubmit, onCancel, register, errors, isSubmitting }: PaymentFormModalProps) {
+function PaymentFormModal({ editingPayment, owners, properties, selectedPropertyId, onSubmit, onCancel, register, errors, isSubmitting, pendingFiles, onFilesChange }: PaymentFormModalProps) {
   const selectedProperty = selectedPropertyId ? properties.find(p => p.id === selectedPropertyId) : null;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    onFilesChange([...pendingFiles, ...files]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    onFilesChange(pendingFiles.filter((_, i) => i !== index));
+  };
 
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
@@ -547,6 +595,45 @@ function PaymentFormModal({ editingPayment, owners, properties, selectedProperty
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
                 <textarea {...register('notes')} rows={2} className="mt-1 block w-full rounded-md border px-3 py-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
+              {/* File Attachments */}
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Attachments</label>
+                <div className="mt-1">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*,application/pdf"
+                    multiple
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  >
+                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Files
+                  </button>
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">Images or PDF</span>
+                </div>
+                {pendingFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {pendingFiles.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between py-1 px-2 bg-gray-50 dark:bg-gray-700 rounded text-sm">
+                        <span className="truncate text-gray-700 dark:text-gray-300">{file.name}</span>
+                        <button type="button" onClick={() => removeFile(index)} className="ml-2 text-red-500 hover:text-red-700">
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

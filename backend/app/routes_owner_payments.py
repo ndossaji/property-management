@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import OwnerPayment, OwnerPaymentAttachment, Owner, Property, PaymentMethod, Expense
+from app.models import OwnerPayment, OwnerPaymentAttachment, Owner, Property, PaymentMethod, Expense, PaidBy
 from app.schemas import (
     OwnerPaymentCreate, OwnerPaymentUpdate, OwnerPaymentResponse,
     OwnerPaymentWithDetails, OwnerPaymentSummary,
@@ -126,16 +126,34 @@ async def get_property_balances(
     # Get all properties
     properties = db.query(Property).all()
 
-    # Get expenses grouped by property
-    expenses_by_property = {}
-    expenses_query = db.query(
+    # Get PM expenses grouped by property (expenses paid by property management)
+    pm_expenses_by_property = {}
+    pm_expenses_query = db.query(
         Expense.property_id,
         func.sum(Expense.amount)
-    ).group_by(Expense.property_id).all()
-    for prop_id, total in expenses_query:
-        expenses_by_property[prop_id] = total or Decimal('0')
+    ).filter(Expense.paid_by == PaidBy.PROPERTY_MANAGEMENT).group_by(Expense.property_id).all()
+    for prop_id, total in pm_expenses_query:
+        pm_expenses_by_property[prop_id] = total or Decimal('0')
 
-    # Get owner payments grouped by property
+    # Get owner expenses grouped by property (expenses paid directly by owner)
+    owner_expenses_by_property = {}
+    owner_expenses_query = db.query(
+        Expense.property_id,
+        func.sum(Expense.amount)
+    ).filter(Expense.paid_by == PaidBy.OWNER).group_by(Expense.property_id).all()
+    for prop_id, total in owner_expenses_query:
+        owner_expenses_by_property[prop_id] = total or Decimal('0')
+
+    # Get unpaid expenses grouped by property
+    unpaid_expenses_by_property = {}
+    unpaid_expenses_query = db.query(
+        Expense.property_id,
+        func.sum(Expense.amount)
+    ).filter(Expense.paid_by == PaidBy.UNPAID).group_by(Expense.property_id).all()
+    for prop_id, total in unpaid_expenses_query:
+        unpaid_expenses_by_property[prop_id] = total or Decimal('0')
+
+    # Get owner payments to PM grouped by property
     payments_by_property = {}
     payments_query = db.query(
         OwnerPayment.property_id,
@@ -146,15 +164,23 @@ async def get_property_balances(
 
     # Build response
     property_balances = []
-    total_expenses = Decimal('0')
+    total_pm_expenses = Decimal('0')
+    total_owner_expenses = Decimal('0')
+    total_unpaid_expenses = Decimal('0')
     total_payments = Decimal('0')
 
     for prop in properties:
-        prop_expenses = expenses_by_property.get(prop.id, Decimal('0'))
+        prop_pm_expenses = pm_expenses_by_property.get(prop.id, Decimal('0'))
+        prop_owner_expenses = owner_expenses_by_property.get(prop.id, Decimal('0'))
+        prop_unpaid_expenses = unpaid_expenses_by_property.get(prop.id, Decimal('0'))
         prop_payments = payments_by_property.get(prop.id, Decimal('0'))
-        balance = prop_expenses - prop_payments
+        # Balance owed = PM expenses minus payments to PM
+        # Owner expenses don't factor into balance owed since owner already paid those
+        balance = prop_pm_expenses - prop_payments
 
-        total_expenses += prop_expenses
+        total_pm_expenses += prop_pm_expenses
+        total_owner_expenses += prop_owner_expenses
+        total_unpaid_expenses += prop_unpaid_expenses
         total_payments += prop_payments
 
         # Get owner names for this property
@@ -164,8 +190,10 @@ async def get_property_balances(
             property_id=prop.id,
             property_address=prop.full_address,
             property_nickname=prop.nickname,
-            total_expenses=prop_expenses,
-            total_payments=prop_payments,
+            pm_expenses=prop_pm_expenses,
+            owner_expenses=prop_owner_expenses,
+            unpaid_expenses=prop_unpaid_expenses,
+            payments_to_pm=prop_payments,
             balance_owed=balance,
             owner_names=owner_names
         ))
@@ -175,9 +203,11 @@ async def get_property_balances(
 
     return PropertyBalancesSummary(
         properties=property_balances,
-        total_expenses=total_expenses,
-        total_payments=total_payments,
-        total_balance_owed=total_expenses - total_payments
+        total_pm_expenses=total_pm_expenses,
+        total_owner_expenses=total_owner_expenses,
+        total_unpaid_expenses=total_unpaid_expenses,
+        total_payments_to_pm=total_payments,
+        total_balance_owed=total_pm_expenses - total_payments
     )
 
 

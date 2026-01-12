@@ -997,15 +997,19 @@ export interface PropertyBalanceResponse {
   property_id: number;
   property_address: string;
   property_nickname: string | null;
-  total_expenses: number;
-  total_payments: number;
-  balance_owed: number;
+  pm_expenses: number;  // Expenses paid by Property Management
+  owner_expenses: number;  // Expenses paid by Owner
+  unpaid_expenses: number;  // Expenses not yet paid
+  payments_to_pm: number;  // Payments from owner to PM
+  balance_owed: number;  // PM Expenses - Payments to PM
   owner_names: string[];
 }
 
 export interface PropertyBalancesSummary {
   properties: PropertyBalanceResponse[];
-  total_expenses: number;
-  total_payments: number;
+  total_pm_expenses: number;
+  total_owner_expenses: number;
+  total_unpaid_expenses: number;
+  total_payments_to_pm: number;
   total_balance_owed: number;
 }

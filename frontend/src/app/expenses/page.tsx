@@ -66,6 +66,7 @@ function ExpensesContent() {
   const [filterPropertyIds, setFilterPropertyIds] = useState<number[]>([]);
   const [filterOwnerIds, setFilterOwnerIds] = useState<number[]>([]);
   const [allExpenses, setAllExpenses] = useState<Expense[]>([]);
+  const [pendingReceipts, setPendingReceipts] = useState<File[]>([]);
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -144,11 +145,23 @@ function ExpensesContent() {
         custom_fields: customFieldValues,
       };
 
+      let expenseId: number;
       if (editingExpense) {
         await expensesApi.update(editingExpense.id, expenseData as any);
+        expenseId = editingExpense.id;
       } else {
-        await expensesApi.create(expenseData as any);
+        const newExpense = await expensesApi.create(expenseData as any);
+        expenseId = newExpense.id;
       }
+      // Upload any pending receipts
+      for (const file of pendingReceipts) {
+        try {
+          await expensesApi.uploadReceipt(expenseId, file);
+        } catch (uploadErr: any) {
+          console.error('Failed to upload receipt:', file.name, uploadErr);
+        }
+      }
+      setPendingReceipts([]);
       reset();
       setCustomFieldValues({});
       setShowForm(false);
@@ -376,11 +389,14 @@ function ExpensesContent() {
               setEditingExpense(null);
               reset();
               setCustomFieldValues({});
+              setPendingReceipts([]);
             }}
             register={register}
             errors={errors}
             isSubmitting={isSubmitting}
             setValue={setValue}
+            pendingReceipts={pendingReceipts}
+            onReceiptsChange={setPendingReceipts}
           />
         )}
 
@@ -427,9 +443,23 @@ interface ExpenseFormProps {
   errors: any;
   isSubmitting: boolean;
   setValue: any;
+  pendingReceipts: File[];
+  onReceiptsChange: (files: File[]) => void;
 }
 
-function ExpenseForm({ editingExpense, properties, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting, setValue }: ExpenseFormProps) {
+function ExpenseForm({ editingExpense, properties, customFields, customFieldValues, onCustomFieldChange, onSubmit, onCancel, register, errors, isSubmitting, setValue, pendingReceipts, onReceiptsChange }: ExpenseFormProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    onReceiptsChange([...pendingReceipts, ...files]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    onReceiptsChange(pendingReceipts.filter((_, i) => i !== index));
+  };
+
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto m-4">
@@ -509,6 +539,46 @@ function ExpenseForm({ editingExpense, properties, customFields, customFieldValu
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
               <textarea {...register('notes')} rows={3} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border px-3 py-2 text-gray-900 bg-white" />
+            </div>
+
+            {/* Receipt Attachments */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Receipts</label>
+              <div className="mt-1">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  accept="image/*,application/pdf"
+                  multiple
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                >
+                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Receipts
+                </button>
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">Images or PDF</span>
+              </div>
+              {pendingReceipts.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {pendingReceipts.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between py-1 px-2 bg-gray-50 dark:bg-gray-700 rounded text-sm">
+                      <span className="truncate text-gray-700 dark:text-gray-300">{file.name}</span>
+                      <button type="button" onClick={() => removeFile(index)} className="ml-2 text-red-500 hover:text-red-700">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Custom Fields */}
