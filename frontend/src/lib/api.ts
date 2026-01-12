@@ -854,6 +854,17 @@ export const lateFeesApi = {
 // Owner Payment API
 // ============================================================================
 
+export interface OwnerPaymentAttachment {
+  id: number;
+  payment_id: number;
+  filename: string;
+  original_filename: string;
+  file_path: string;
+  content_type: string | null;
+  file_size: number | null;
+  created_at: string;
+}
+
 export interface OwnerPayment {
   id: number;
   owner_id: number;
@@ -866,11 +877,13 @@ export interface OwnerPayment {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  attachments: OwnerPaymentAttachment[];
 }
 
 export interface OwnerPaymentWithDetails extends OwnerPayment {
   owner: Owner;
   property: Property | null;
+  attachments: OwnerPaymentAttachment[];
 }
 
 export interface OwnerPaymentCreate {
@@ -943,6 +956,40 @@ export const ownerPaymentsApi = {
 
   getPropertyBalances: () =>
     apiRequest<PropertyBalancesSummary>('/api/owner-payments/property-balances'),
+
+  // Attachment operations
+  uploadAttachment: async (paymentId: number, file: File): Promise<OwnerPaymentAttachment> => {
+    const token = (await import('./auth')).getAuthToken();
+    const baseUrl = (await import('./auth')).getApiUrl();
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${baseUrl}/api/owner-payments/${paymentId}/attachments`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw { message: errorData.detail || 'Failed to upload attachment', status: response.status };
+    }
+
+    return response.json();
+  },
+
+  getAttachmentUrl: (paymentId: number, attachmentId: number): string => {
+    const baseUrl = typeof window !== 'undefined'
+      ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+      : 'http://localhost:8000';
+    return `${baseUrl}/api/owner-payments/${paymentId}/attachments/${attachmentId}/download`;
+  },
+
+  deleteAttachment: (paymentId: number, attachmentId: number) =>
+    apiRequest<void>(`/api/owner-payments/${paymentId}/attachments/${attachmentId}`, { method: 'DELETE' }),
 };
 
 // Property Balance types

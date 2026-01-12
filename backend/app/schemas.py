@@ -671,6 +671,25 @@ class OwnerPaymentUpdate(BaseModel):
     property_id: Optional[int] = None
 
 
+class OwnerPaymentAttachmentBase(BaseModel):
+    """Base schema for OwnerPaymentAttachment"""
+    filename: str
+    original_filename: str
+    file_path: str
+    content_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
+class OwnerPaymentAttachmentResponse(OwnerPaymentAttachmentBase):
+    """Schema for OwnerPaymentAttachment response"""
+    id: int
+    payment_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class OwnerPaymentResponse(OwnerPaymentBase):
     """Schema for Owner Payment response"""
     id: int
@@ -678,6 +697,7 @@ class OwnerPaymentResponse(OwnerPaymentBase):
     property_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    attachments: List[OwnerPaymentAttachmentResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -687,6 +707,7 @@ class OwnerPaymentWithDetails(OwnerPaymentResponse):
     """Schema for Owner Payment with owner and property details"""
     owner: OwnerResponse
     property: Optional[PropertyResponse] = None
+    attachments: List[OwnerPaymentAttachmentResponse] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

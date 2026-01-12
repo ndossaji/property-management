@@ -3,23 +3,34 @@ Owner Payment Routes
 CRUD API endpoints for managing payments from owners to property management
 """
 
+import os
+import uuid
 from typing import List, Optional
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models import OwnerPayment, Owner, Property, PaymentMethod, Expense
+from app.models import OwnerPayment, OwnerPaymentAttachment, Owner, Property, PaymentMethod, Expense
 from app.schemas import (
     OwnerPaymentCreate, OwnerPaymentUpdate, OwnerPaymentResponse,
     OwnerPaymentWithDetails, OwnerPaymentSummary,
-    PropertyBalanceResponse, PropertyBalancesSummary
+    PropertyBalanceResponse, PropertyBalancesSummary,
+    OwnerPaymentAttachmentResponse
 )
 from app.auth import get_current_active_user, User
 
 router = APIRouter(prefix="/api/owner-payments", tags=["owner-payments"])
+
+# Upload directory for owner payment attachments
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "owner_payments")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+ALLOWED_FILE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.get("", response_model=List[OwnerPaymentWithDetails])
@@ -278,3 +289,119 @@ async def delete_owner_payment(
     db.commit()
     return None
 
+
+# ============================================================================
+# Attachment Endpoints
+# ============================================================================
+
+@router.post("/{payment_id}/attachments", response_model=OwnerPaymentAttachmentResponse, status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    payment_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Upload an attachment for an owner payment"""
+    # Verify payment exists
+    payment = db.query(OwnerPayment).filter(OwnerPayment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Owner payment with id {payment_id} not found"
+        )
+
+    # Validate file type
+    if file.content_type not in ALLOWED_FILE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type {file.content_type} not allowed. Allowed types: {', '.join(ALLOWED_FILE_TYPES)}"
+        )
+
+    # Read file and check size
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+
+    # Generate unique filename
+    ext = os.path.splitext(file.filename)[1] if file.filename else ".jpg"
+    unique_filename = f"{uuid.uuid4()}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+
+    # Save file
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Create attachment record
+    attachment = OwnerPaymentAttachment(
+        filename=unique_filename,
+        original_filename=file.filename or "attachment",
+        file_path=file_path,
+        content_type=file.content_type,
+        file_size=len(content),
+        payment_id=payment_id
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.get("/{payment_id}/attachments/{attachment_id}/download")
+async def download_attachment(
+    payment_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Download an attachment file"""
+    attachment = db.query(OwnerPaymentAttachment).filter(
+        OwnerPaymentAttachment.id == attachment_id,
+        OwnerPaymentAttachment.payment_id == payment_id
+    ).first()
+    if not attachment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found"
+        )
+
+    if not os.path.exists(attachment.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment file not found on server"
+        )
+
+    return FileResponse(
+        attachment.file_path,
+        filename=attachment.original_filename,
+        media_type=attachment.content_type
+    )
+
+
+@router.delete("/{payment_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_attachment(
+    payment_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Delete an attachment"""
+    attachment = db.query(OwnerPaymentAttachment).filter(
+        OwnerPaymentAttachment.id == attachment_id,
+        OwnerPaymentAttachment.payment_id == payment_id
+    ).first()
+    if not attachment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found"
+        )
+
+    # Delete file from disk
+    if os.path.exists(attachment.file_path):
+        os.remove(attachment.file_path)
+
+    db.delete(attachment)
+    db.commit()
+    return None

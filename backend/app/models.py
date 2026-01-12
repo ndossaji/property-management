@@ -576,6 +576,33 @@ class OwnerPayment(Base):
     # Relationships
     owner = relationship("Owner", backref="payments", lazy="selectin")
     property = relationship("Property", backref="owner_payments", lazy="selectin")
+    attachments = relationship("OwnerPaymentAttachment", back_populates="payment", cascade="all, delete-orphan", lazy="selectin")
 
     def __repr__(self):
         return f"<OwnerPayment(id={self.id}, owner_id={self.owner_id}, amount={self.amount})>"
+
+
+class OwnerPaymentAttachment(Base):
+    """OwnerPaymentAttachment model - represents file attachments for owner payments"""
+    __tablename__ = "owner_payment_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # File details
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    content_type = Column(String(100), nullable=True)
+    file_size = Column(Integer, nullable=True)
+
+    # Foreign keys
+    payment_id = Column(Integer, ForeignKey("owner_payments.id", ondelete="CASCADE"), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    payment = relationship("OwnerPayment", back_populates="attachments")
+
+    def __repr__(self):
+        return f"<OwnerPaymentAttachment(id={self.id}, filename={self.original_filename})>"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,7 +9,8 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import {
   ownerPaymentsApi, ownersApi, propertiesApi,
   OwnerPaymentWithDetails, OwnerPaymentCreate, PaymentMethod,
-  Owner, Property, PropertyBalancesSummary, PropertyBalanceResponse
+  Owner, Property, PropertyBalancesSummary, PropertyBalanceResponse,
+  OwnerPaymentAttachment
 } from '@/lib/api';
 
 const paymentSchema = z.object({
@@ -51,6 +52,7 @@ function PropertyBalancesContent() {
   const [activeTab, setActiveTab] = useState<'balances' | 'payments'>('balances');
   const [filterPropertyIds, setFilterPropertyIds] = useState<number[]>([]);
   const [filterOwnerIds, setFilterOwnerIds] = useState<number[]>([]);
+  const [selectedPaymentForAttachments, setSelectedPaymentForAttachments] = useState<OwnerPaymentWithDetails | null>(null);
 
   const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<PaymentFormData>({
     resolver: zodResolver(paymentSchema),
@@ -363,7 +365,12 @@ function PropertyBalancesContent() {
         )}
 
         {activeTab === 'payments' && (
-          <PaymentsList payments={payments} onEdit={handleEdit} onDelete={handleDelete} />
+          <PaymentsList
+            payments={payments}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onViewAttachments={(payment) => setSelectedPaymentForAttachments(payment)}
+          />
         )}
 
         {/* Form Modal */}
@@ -378,6 +385,15 @@ function PropertyBalancesContent() {
             register={register}
             errors={errors}
             isSubmitting={isSubmitting}
+          />
+        )}
+
+        {/* Attachments Modal */}
+        {selectedPaymentForAttachments && (
+          <AttachmentModal
+            payment={selectedPaymentForAttachments}
+            onClose={() => setSelectedPaymentForAttachments(null)}
+            onRefresh={loadData}
           />
         )}
       </main>
@@ -546,7 +562,14 @@ function PaymentFormModal({ editingPayment, owners, properties, selectedProperty
   );
 }
 
-function PaymentsList({ payments, onEdit, onDelete }: { payments: OwnerPaymentWithDetails[]; onEdit: (p: OwnerPaymentWithDetails) => void; onDelete: (id: number) => void }) {
+interface PaymentsListProps {
+  payments: OwnerPaymentWithDetails[];
+  onEdit: (p: OwnerPaymentWithDetails) => void;
+  onDelete: (id: number) => void;
+  onViewAttachments: (p: OwnerPaymentWithDetails) => void;
+}
+
+function PaymentsList({ payments, onEdit, onDelete, onViewAttachments }: PaymentsListProps) {
   if (payments.length === 0) {
     return (
       <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow">
@@ -582,14 +605,169 @@ function PaymentsList({ payments, onEdit, onDelete }: { payments: OwnerPaymentWi
               <td className="px-6 py-4 text-sm text-right font-medium text-green-600 dark:text-green-400">${payment.amount.toLocaleString()}</td>
               <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">{payment.payment_method.replace('_', ' ')}</td>
               <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">{payment.description || '-'}</td>
-              <td className="px-6 py-4 text-right text-sm font-medium">
-                <button onClick={() => onEdit(payment)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 mr-3">Edit</button>
+              <td className="px-6 py-4 text-right text-sm font-medium space-x-2">
+                <button onClick={() => onViewAttachments(payment)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">
+                  Files ({payment.attachments?.length || 0})
+                </button>
+                <button onClick={() => onEdit(payment)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400">Edit</button>
                 <button onClick={() => onDelete(payment.id)} className="text-red-600 hover:text-red-900 dark:text-red-400">Delete</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Attachment Modal Component
+interface AttachmentModalProps {
+  payment: OwnerPaymentWithDetails;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function AttachmentModal({ payment, onClose, onRefresh }: AttachmentModalProps) {
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      await ownerPaymentsApi.uploadAttachment(payment.id, file);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload attachment');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (attachmentId: number) => {
+    if (!confirm('Delete this attachment?')) return;
+    try {
+      await ownerPaymentsApi.deleteAttachment(payment.id, attachmentId);
+      onRefresh();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete attachment');
+    }
+  };
+
+  const isPdf = (contentType: string | null) => contentType === 'application/pdf';
+
+  return (
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto m-4">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment Attachments</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {payment.property?.nickname || payment.property?.full_address || 'Unknown Property'} - ${payment.amount.toLocaleString()}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-4">
+          {/* Upload Button */}
+          <div className="mb-4">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleUpload}
+              accept="image/*,application/pdf"
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {isUploading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Upload File
+                </>
+              )}
+            </button>
+            <span className="ml-3 text-sm text-gray-500 dark:text-gray-400">Images or PDF, max 10MB</span>
+          </div>
+
+          {/* Attachments Grid */}
+          {(!payment.attachments || payment.attachments.length === 0) ? (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <p className="mt-2">No attachments yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {payment.attachments.map((attachment) => (
+                <div key={attachment.id} className="relative group border rounded-lg overflow-hidden dark:border-gray-600">
+                  {isPdf(attachment.content_type) ? (
+                    <div className="h-32 bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                      <svg className="h-12 w-12 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM8.5 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm2 2.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 1 0v3a.5.5 0 0 1-.5.5zm2.5-.5a.5.5 0 0 1-1 0v-3a.5.5 0 0 1 1 0v3z"/>
+                      </svg>
+                    </div>
+                  ) : (
+                    <img
+                      src={ownerPaymentsApi.getAttachmentUrl(payment.id, attachment.id)}
+                      alt={attachment.original_filename}
+                      className="h-32 w-full object-cover"
+                    />
+                  )}
+                  <div className="p-2 text-xs text-gray-500 dark:text-gray-400 truncate">{attachment.original_filename}</div>
+                  <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
+                    <a
+                      href={ownerPaymentsApi.getAttachmentUrl(payment.id, attachment.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 bg-white dark:bg-gray-800 rounded shadow"
+                    >
+                      <svg className="h-4 w-4 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                    <button onClick={() => handleDelete(attachment.id)} className="p-1 bg-white dark:bg-gray-800 rounded shadow">
+                      <svg className="h-4 w-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -601,4 +779,3 @@ export default function PropertyBalancesPage() {
     </ProtectedRoute>
   );
 }
-
